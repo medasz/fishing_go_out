@@ -160,6 +160,10 @@ body {
   color: #4CAF50;
 }
 
+.state-inactive {
+  color: #bbb;
+}
+
 /* ---- 操作按钮 ---- */
 .actions {
   padding: 14px 18px;

@@ -5,11 +5,29 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
   // ---------- 获取统计数据 ----------
-  const stats = await chrome.runtime.sendMessage({ action: 'GET_STATS' });
+  const [stats, sourceStatus] = await Promise.all([
+    chrome.runtime.sendMessage({ action: 'GET_STATS' }),
+    chrome.runtime.sendMessage({ action: 'GET_SOURCE_STATUS' })
+  ]);
+
   if (stats) {
     document.getElementById('stat-total').textContent = stats.total || 0;
     document.getElementById('stat-safe').textContent = stats.safe || 0;
     document.getElementById('stat-threat').textContent = stats.threat || 0;
+  }
+
+  // ---------- 渲染情报源状态 ----------
+  if (sourceStatus) {
+    const sourceList = document.getElementById('source-list');
+    sourceList.innerHTML = Object.entries(sourceStatus).map(([key, s]) => {
+      const cls = s.enabled ? 'state-active' : 'state-inactive';
+      const dot = s.enabled ? '● 启用' : '○ 未启用';
+      const keyHint = key === 'phishtank' ? ' (需配置 App Key)' : '';
+      return `<div class="source-item">
+        <span class="source-name">${s.name}${keyHint}</span>
+        <span class="source-state ${cls}">${dot}</span>
+      </div>`;
+    }).join('');
   }
 
   // ---------- 获取当前标签页 ----------

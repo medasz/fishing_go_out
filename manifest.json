@@ -7,7 +7,8 @@
     "webNavigation",
     "storage",
     "notifications",
-    "tabs"
+    "tabs",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"
