@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>钓鱼拦截</title>
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- 头部 -->
+    <header class="popup-header">
+      <div class="header-logo">
+        <span class="logo-icon">🛡️</span>
+        <h1>钓鱼拦截</h1>
+      </div>
+      <span class="version">v1.0</span>
+    </header>
+
+    <!-- 统计面板 -->
+    <section class="stats-panel">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-total">0</div>
+        <div class="stat-label">检测域名</div>
+      </div>
+      <div class="stat-card stat-safe">
+        <div class="stat-number" id="stat-safe">0</div>
+        <div class="stat-label">安全</div>
+      </div>
+      <div class="stat-card stat-threat">
+        <div class="stat-number" id="stat-threat">0</div>
+        <div class="stat-label">威胁</div>
+      </div>
+    </section>
+
+    <!-- 当前页面状态 -->
+    <section class="current-page">
+      <div class="section-title">当前页面</div>
+      <div class="current-domain" id="current-domain">加载中...</div>
+      <div class="current-status" id="current-status">
+        <span class="status-dot"></span>
+        <span class="status-text">检测中...</span>
+      </div>
+    </section>
+
+    <!-- 情报源状态 -->
+    <section class="source-status">
+      <div class="section-title">情报源</div>
+      <div class="source-item">
+        <span class="source-name">URLhaus (abuse.ch)</span>
+        <span class="source-state state-active">● 启用</span>
+      </div>
+      <div class="source-item">
+        <span class="source-name">本地启发式检测</span>
+        <span class="source-state state-active">● 启用</span>
+      </div>
+    </section>
+
+    <!-- 操作按钮 -->
+    <section class="actions">
+      <button class="action-btn btn-clear" id="btn-clear-stats">清除统计</button>
+      <button class="action-btn btn-report" id="btn-report">举报可疑网站</button>
+    </section>
+
+    <!-- 页脚 -->
+    <footer class="popup-footer">
+      <span>数据来源: URLhaus (abuse.ch)</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+/* ============================================================
+ *  告警横幅样式（注入到网页中）
+ * ============================================================ */
+
+:root {
+  --fg-primary: #D32F2F;
+  --fg-primary-dark: #B71C1C;
+  --fg-bg: #FFF5F5;
+  --fg-border: #FFCDD2;
+  --fg-text: #333;
+  --fg-text-secondary: #666;
+}
+
+/* ---- 全宽告警横幅 ---- */
+#fishing-guard-warning {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 2147483647 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  animation: fg-slide-down 0.3s ease-out !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.25) !important;
+}
+
+.fg-banner-inner {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 14px !important;
+  padding: 16px 20px !important;
+  background: linear-gradient(135deg, #FFF5F5 0%, #FFEBEE 100%) !important;
+  border-bottom: 4px solid var(--fg-primary) !important;
+}
+
+.fg-banner-icon {
+  font-size: 32px !important;
+  flex-shrink: 0 !important;
+  animation: fg-pulse 2s infinite !important;
+}
+
+.fg-banner-content {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.fg-banner-title {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: var(--fg-primary-dark) !important;
+  margin-bottom: 6px !important;
+}
+
+.fg-banner-domain {
+  font-size: 13px !important;
+  color: var(--fg-text-secondary) !important;
+  margin-bottom: 8px !important;
+  word-break: break-all !important;
+}
+
+.fg-banner-domain strong {
+  color: var(--fg-primary) !important;
+}
+
+.fg-banner-detail {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-bottom: 6px !important;
+}
+
+.fg-tag {
+  display: inline-block !important;
+  padding: 3px 10px !important;
+  border-radius: 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.fg-tag-threat {
+  background: #FFCDD2 !important;
+  color: var(--fg-primary-dark) !important;
+}
+
+.fg-tag-source {
+  background: #E3F2FD !important;
+  color: #1565C0 !important;
+}
+
+.fg-banner-desc {
+  font-size: 13px !important;
+  color: #555 !important;
+  margin-bottom: 12px !important;
+  padding: 8px 12px !important;
+  background: rgba(211,47,47,0.05) !important;
+  border-left: 3px solid var(--fg-primary) !important;
+  border-radius: 0 4px 4px 0 !important;
+}
+
+.fg-banner-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+}
+
+.fg-btn {
+  padding: 8px 20px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  font-family: inherit !important;
+}
+
+.fg-btn-danger {
+  background: var(--fg-primary) !important;
+  color: white !important;
+}
+
+.fg-btn-danger:hover {
+  background: var(--fg-primary-dark) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 8px rgba(211,47,47,0.4) !important;
+}
+
+.fg-btn-secondary {
+  background: white !important;
+  color: #555 !important;
+  border: 1px solid #ddd !important;
+}
+
+.fg-btn-secondary:hover {
+  background: #f5f5f5 !important;
+  border-color: #bbb !important;
+}
+
+.fg-banner-details {
+  margin-top: 10px !important;
+}
+
+.fg-banner-details pre {
+  background: #1e1e1e !important;
+  color: #d4d4d4 !important;
+  padding: 12px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  overflow-x: auto !important;
+  max-height: 200px !important;
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+}
+
+/* ---- 页面警告遮罩 ---- */
+.fg-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: rgba(255, 0, 0, 0.03) !important;
+  pointer-events: none !important;
+  z-index: 2147483646 !important;
+  border: 2px solid rgba(255, 0, 0, 0.15) !important;
+  box-sizing: border-box !important;
+}
+
+/* ---- 安全标识徽章 ---- */
+#fishing-guard-safe {
+  position: fixed !important;
+  top: 10px !important;
+  right: 10px !important;
+  z-index: 2147483646 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 14px !important;
+  background: rgba(76, 175, 80, 0.95) !important;
+  color: white !important;
+  border-radius: 20px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  box-shadow: 0 2px 12px rgba(76,175,80,0.4) !important;
+  transition: opacity 0.5s !important;
+}
+
+.fg-safe-icon {
+  font-size: 16px !important;
+}
+
+.fg-safe-badge.fg-fade-out {
+  opacity: 0 !important;
+}
+
+/* ---- 动画 ---- */
+@keyframes fg-slide-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fg-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}

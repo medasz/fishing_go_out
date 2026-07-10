@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "钓鱼拦截 - 威胁情报检测",
+  "version": "1.0.0",
+  "description": "实时查询访问域名的威胁情报，钓鱼/恶意网站告警拦截",
+  "permissions": [
+    "webNavigation",
+    "storage",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "钓鱼拦截",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles/warning.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["styles/warning.css", "images/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
