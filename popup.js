@@ -20,15 +20,60 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (sourceStatus) {
     const sourceList = document.getElementById('source-list');
     sourceList.innerHTML = Object.entries(sourceStatus).map(([key, s]) => {
-      const cls = s.enabled ? 'state-active' : 'state-inactive';
-      const dot = s.enabled ? '● 启用' : '○ 未启用';
-      const keyHint = key === 'phishtank' ? ' (需配置 App Key)' : '';
+
+      const keyHint = (s.requiresKey && !s.hasKey)
+        ? (key === 'phishtank' ? ' (需配置 App Key)' : ' (需配置 API Key)') : '';
       return `<div class="source-item">
-        <span class="source-name">${s.name}${keyHint}</span>
-        <span class="source-state ${cls}">${dot}</span>
+        <label class="source-toggle">
+          <input type="checkbox" data-key="${key}" ${s.userEnabled ? 'checked' : ''}>
+          <span class="source-name">${s.name}${keyHint}</span>
+        </label>
       </div>`;
     }).join('');
+
+    // 切换情报源开关（实时保存到 storage 并通知后台）
+    sourceList.addEventListener('change', async (e) => {
+      const cb = e.target.closest('input[type="checkbox"][data-key]');
+      if (!cb) return;
+      const toggles = {};
+      sourceList.querySelectorAll('input[type="checkbox"][data-key]').forEach(c => {
+        toggles[c.dataset.key] = c.checked;
+      });
+      await chrome.storage.local.set({ sourceEnabled: toggles });
+      await chrome.runtime.sendMessage({ action: 'UPDATE_SOURCE_TOGGLES', toggles });
+    });
   }
+
+  // ---------- 加载并保存 API Key 设置 ----------
+  const KEY_FIELDS = {
+    virustotal: document.getElementById('key-virustotal'),
+    phishtank: document.getElementById('key-phishtank'),
+    alienvault: document.getElementById('key-alienvault'),
+    threatbook: document.getElementById('key-threatbook')
+  };
+
+  const savedKeys = await chrome.runtime.sendMessage({ action: 'GET_API_KEYS' });
+  if (savedKeys) {
+    if (savedKeys.virustotal) KEY_FIELDS.virustotal.value = savedKeys.virustotal;
+    if (savedKeys.phishtank) KEY_FIELDS.phishtank.value = savedKeys.phishtank;
+    if (savedKeys.alienvault) KEY_FIELDS.alienvault.value = savedKeys.alienvault;
+    if (savedKeys.threatbook) KEY_FIELDS.threatbook.value = savedKeys.threatbook;
+  }
+
+  document.getElementById('btn-save-keys').addEventListener('click', async () => {
+    const keys = {
+      virustotal: KEY_FIELDS.virustotal.value.trim(),
+      phishtank: KEY_FIELDS.phishtank.value.trim(),
+      alienvault: KEY_FIELDS.alienvault.value.trim(),
+      threatbook: KEY_FIELDS.threatbook.value.trim()
+    };
+    await chrome.storage.local.set({ apiKeys: keys });
+    await chrome.runtime.sendMessage({ action: 'UPDATE_API_KEYS', keys });
+    const btn = document.getElementById('btn-save-keys');
+    const original = btn.textContent;
+    btn.textContent = '已保存 ✓';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
 
   // ---------- 获取当前标签页 ----------
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

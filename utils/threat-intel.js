@@ -8,33 +8,33 @@
 const API_KEYS = {
   phishtank: '',   // 申请地址: https://www.phishtank.com/register.php
   alienvault: '',  // 申请地址: https://otx.alienvault.com/ (留空则使用公开 API)
-  abuseipdb: ''    // 申请地址: https://www.abuseipdb.com/ (仅 IP 查询)
+  abuseipdb: '',   // 申请地址: https://www.abuseipdb.com/ (仅 IP 查询)
+  virustotal: '',  // 申请地址: https://www.virustotal.com/gui/my-apikey (免费 Key，多引擎扫描)
+  threatbook: ''   // 申请地址: https://x.threatbook.com/ (国内威胁情报，需免费 API Key)
 };
 
-// ---------- Phishing Army 块列表缓存 ----------
-let phishingArmyBlocklist = new Set();
-let phishingArmyLastUpdate = 0;
-const PHISHING_ARMY_CACHE_TTL = 30 * 60 * 1000; // 30 分钟更新一次
+// ---------- VirusTotal 配置 ----------
+// 恶意引擎数达到该阈值即判定为威胁（免费 Key 限速 4 次/分钟，故作为确认层置于最后）
+const VT_MALICIOUS_THRESHOLD = 3;
+const VT_TIMEOUT = 12000;
 
-/**
- * 从 phishing.army 下载最新块列表并缓存
- */
-async function refreshPhishingArmyBlocklist() {
-  if (Date.now() - phishingArmyLastUpdate < PHISHING_ARMY_CACHE_TTL) return;
-  try {
-    const resp = await fetch('https://phishing.army/download/phishing_army_blocklist.txt', {
-      signal: AbortSignal.timeout(15000)
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const text = await resp.text();
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-    phishingArmyBlocklist = new Set(lines.map(l => l.toLowerCase()));
-    phishingArmyLastUpdate = Date.now();
-    console.log(`[Phishing Army] 块列表已更新: ${phishingArmyBlocklist.size} 条`);
-  } catch (err) {
-    console.warn(`[Phishing Army] 块列表下载失败: ${err.message}`);
-  }
-}
+// ---------- 微步 ThreatBook 配置 ----------
+const TB_TIMEOUT = 12000;
+
+// 微步威胁判定类型（命中即视为威胁）
+const TB_MALICIOUS_JUDGMENTS = new Set([
+  'Phishing', 'Malware', 'C2', 'Botnet', 'Fraud', 'Scam',
+  'Ransomware', 'Trojan', 'Backdoor', 'Exploit', 'Mining', 'Gambling'
+]);
+const TB_JUDGMENT_MAP = {
+  Phishing: '钓鱼网站', Malware: '恶意软件', C2: '远控 C2', Botnet: '僵尸网络',
+  Fraud: '欺诈', Scam: '诈骗', Spam: '垃圾邮件', Suspicious: '可疑',
+  Exploit: '漏洞利用', Ransomware: '勒索软件', Trojan: '木马', Backdoor: '后门',
+  Mining: '挖矿', Gambling: '赌博', DDoS: 'DDoS', Scanner: '扫描',
+  'Brute Force': '暴力破解', Zombie: '傀儡机', Proxy: '代理', VPN: 'VPN'
+};
+
+// ---------- 以下情报源均为实时 API 查询，不下载本地块列表文件 ----------
 
 // ---------- 情报源配置 ----------
 const INTEL_SOURCES = {
@@ -99,48 +99,13 @@ const INTEL_SOURCES = {
     }
   },
 
-  // Phishing Army — 开源钓鱼域名块列表 (免费，无需 Key)
-  phishing_army: {
-    name: 'Phishing Army',
-    enabled: true,
-    check: async (domain) => {
-      if (isIP(domain)) return null; // 块列表不带 IP
-      await refreshPhishingArmyBlocklist();
-      // 精确匹配：完整域名
-      if (phishingArmyBlocklist.has(domain.toLowerCase())) {
-        return {
-          is_threat: true,
-          source: 'Phishing Army',
-          domain,
-          threat_type: '钓鱼/欺诈域名',
-          description: `该域名已收录于 Phishing Army 开源钓鱼块列表`,
-          confidence: 'high'
-        };
-      }
-      // 模糊匹配：父级域名
-      const parts = domain.split('.');
-      for (let i = 1; i < parts.length - 1; i++) {
-        const parent = parts.slice(i).join('.').toLowerCase();
-        if (phishingArmyBlocklist.has(parent)) {
-          return {
-            is_threat: true,
-            source: 'Phishing Army',
-            domain,
-            threat_type: '钓鱼/欺诈子域名',
-            description: `父级域名 ${parent} 已被 Phishing Army 收录`,
-            confidence: 'high'
-          };
-        }
-      }
-      return null;
-    }
-  },
-
   // PhishTank — 钓鱼 URL 社区数据库 (免费，需申请 App Key)
   phishtank: {
     name: 'PhishTank',
     endpoint: 'https://checkurl.phishtank.com/checkurl/',
-    enabled: false,  // 填入 API Key 后启用
+    enabled: false,  // 默认关闭，可在弹窗开关启用
+    requiresKey: true,
+    keyName: 'phishtank',
     timeout: 10000,
     check: async (host) => {
       const key = API_KEYS.phishtank;
@@ -258,6 +223,180 @@ const INTEL_SOURCES = {
         return null;
       } catch (err) {
         console.warn(`[AlienVault OTX] 查询失败: ${err.message}`);
+        return null;
+      }
+    }
+  },
+
+  // VirusTotal — 多引擎聚合扫描平台 (免费 API Key，限速 4 次/分钟，作为确认层)
+  virustotal: {
+    name: 'VirusTotal',
+    enabled: true,
+    requiresKey: true,
+    keyName: 'virustotal',
+    timeout: VT_TIMEOUT,
+    check: async (host) => {
+      const key = API_KEYS.virustotal;
+      if (!key) return null;
+
+      const endpoint = isIP(host) ? 'ip_addresses' : 'domains';
+      const url = `https://www.virustotal.com/api/v3/${endpoint}/${encodeURIComponent(host)}`;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), VT_TIMEOUT);
+
+      try {
+        const resp = await fetch(url, {
+          headers: { 'x-apikey': key },
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+
+        if (resp.status === 401) {
+          console.warn('[VirusTotal] API Key 无效 (401)');
+          return null;
+        }
+        if (resp.status === 429) {
+          console.warn('[VirusTotal] 触发速率限制 (429)，本次跳过查询');
+          return null;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (resp.status === 404) return null; // 无此指标记录
+
+        const data = await resp.json();
+        const attrs = data?.data?.attributes;
+        if (!attrs) return null;
+
+        const stats = attrs.last_analysis_stats || {};
+        const malicious = stats.malicious || 0;
+        const suspicious = stats.suspicious || 0;
+        const reputation = typeof attrs.reputation === 'number' ? attrs.reputation : 0;
+        const categories = Object.keys(attrs.categories || {});
+
+        // 判定：恶意引擎数达阈值，或信誉评分极低
+        if (malicious >= VT_MALICIOUS_THRESHOLD || reputation <= -10) {
+          const detections = [];
+          const results = attrs.last_analysis_results || {};
+          for (const [engine, r] of Object.entries(results)) {
+            if (r && (r.category === 'malicious' || r.category === 'suspicious')) {
+              detections.push(engine);
+            }
+          }
+
+          const total =
+            (stats.harmless || 0) + malicious + suspicious +
+            (stats.undetected || 0) + (stats.timeout || 0);
+
+          return {
+            is_threat: true,
+            source: 'VirusTotal',
+            domain: host,
+            threat_type: categories.length ? categories.join(', ') : '恶意活动',
+            malicious_count: malicious,
+            suspicious_count: suspicious,
+            total_engines: total,
+            reputation,
+            detections: detections.slice(0, 12),
+            description: `VirusTotal ${malicious} 个安全引擎判定为恶意` +
+              (reputation < 0 ? `，信誉评分 ${reputation}` : '') +
+              (detections.length ? `（${detections.slice(0, 5).join('、')} 等）` : ''),
+            confidence: malicious >= 5 ? 'high' : 'medium'
+          };
+        }
+        return null;
+      } catch (err) {
+        console.warn(`[VirusTotal] 查询失败: ${err.message}`);
+        return null;
+      }
+    }
+  },
+
+  // 微步在线 ThreatBook — 国内威胁情报平台 (需免费 API Key，作为确认层；默认关闭，可在弹窗开关启用)
+  threatbook: {
+    name: '微步 ThreatBook',
+    enabled: false,
+    requiresKey: true,
+    keyName: 'threatbook',
+    timeout: TB_TIMEOUT,
+    check: async (host) => {
+      const key = API_KEYS.threatbook;
+      if (!key) return null;
+
+      const isIpHost = isIP(host);
+      const api = isIpHost ? 'scene/ip_reputation' : 'domain/query';
+      const url = `https://api.threatbook.cn/v3/${api}`;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TB_TIMEOUT);
+
+      try {
+        const body = new URLSearchParams({ apikey: key, resource: host, lang: 'zh' });
+        if (isIpHost) body.set('realtime_verdict', 'true');
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body,
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        // response_code 非 0 表示错误（如 Key 无效、配额耗尽），优雅降级
+        if (data.response_code !== 0) {
+          console.warn(`[ThreatBook] 查询失败 (code=${data.response_code}): ${data.verbose_msg}`);
+          return null;
+        }
+
+        if (isIpHost) {
+          const info = data.ips?.[host];
+          if (!info) return null;
+
+          const malicious = info.is_malicious === true ||
+            (info.judgments || []).some(j => TB_MALICIOUS_JUDGMENTS.has(j));
+          if (!malicious) return null;
+
+          const judgments = (info.judgments || []).map(j => TB_JUDGMENT_MAP[j] || j);
+          const severity = info.severity || info.confidence_level || '未知';
+          return {
+            is_threat: true,
+            source: '微步 ThreatBook',
+            domain: host,
+            threat_type: judgments.join('、') || '恶意 IP',
+            judgments: info.judgments,
+            confidence_level: info.confidence_level || null,
+            severity: info.severity || null,
+            description: `微步判定为恶意 IP（${severity}）` +
+              (judgments.length ? `，类型: ${judgments.slice(0, 5).join('、')}` : ''),
+            confidence: (info.confidence_level === 'high' ||
+              info.severity === 'critical' || info.severity === 'high') ? 'high' : 'medium'
+          };
+        }
+
+        // 域名查询
+        const info = data.domains?.[host];
+        if (!info) return null;
+        const judgments = (info.judgments || []).filter(j => TB_MALICIOUS_JUDGMENTS.has(j));
+        if (judgments.length === 0) return null;
+
+        const zh = judgments.map(j => TB_JUDGMENT_MAP[j] || j);
+        const strong = judgments.some(j =>
+          ['Phishing', 'Malware', 'C2', 'Botnet', 'Ransomware', 'Trojan', 'Backdoor', 'Fraud', 'Scam'].includes(j));
+        return {
+          is_threat: true,
+          source: '微步 ThreatBook',
+          domain: host,
+          threat_type: zh.join('、'),
+          judgments,
+          confidence_level: info.confidence_level || null,
+          severity: info.severity || null,
+          description: `微步情报命中威胁类型: ${zh.join('、')}`,
+          confidence: strong ? 'high' : 'medium'
+        };
+      } catch (err) {
+        console.warn(`[ThreatBook] 查询失败: ${err.message}`);
         return null;
       }
     }
@@ -521,7 +660,7 @@ export async function inspectHost(host) {
     if (!source.enabled) continue;
 
     // 需要 Key 但未配置的源，自动跳过
-    if (key === 'phishtank' && !API_KEYS.phishtank) continue;
+    if (source.requiresKey && !API_KEYS[source.keyName]) continue;
 
     try {
       const r = await source.check(host);
@@ -544,14 +683,11 @@ export async function inspectHost(host) {
 }
 
 /**
- * 预加载块列表类情报源（扩展启动时调用）
+ * 预加载情报源（扩展启动时调用）
+ * 当前所有情报源均为实时 API 查询，无需预下载块列表
  */
 export async function preloadIntelligenceSources() {
-  console.log('[威胁情报] 预加载情报源...');
-  await Promise.allSettled([
-    refreshPhishingArmyBlocklist()
-  ]);
-  console.log('[威胁情报] 预加载完成');
+  console.log('[威胁情报] 情报源均为实时 API 查询，无需预加载块列表');
 }
 
 /**
@@ -562,12 +698,22 @@ export function updateAPIKeys(keys) {
   if (keys.phishtank !== undefined) API_KEYS.phishtank = keys.phishtank;
   if (keys.alienvault !== undefined) API_KEYS.alienvault = keys.alienvault;
   if (keys.abuseipdb !== undefined) API_KEYS.abuseipdb = keys.abuseipdb;
-
-  // 有 Key 时自动启用对应源
-  if (keys.phishtank) INTEL_SOURCES.phishtank.enabled = true;
-  if (keys.abuseipdb) INTEL_SOURCES.abuseipdb.enabled = true;
-
+  if (keys.virustotal !== undefined) API_KEYS.virustotal = keys.virustotal;
+  if (keys.threatbook !== undefined) API_KEYS.threatbook = keys.threatbook;
+  // 注意：源的启用/禁用由用户的情报源开关(sourceEnabled)控制，不再随 Key 自动启用
   console.log('[威胁情报] API Key 已更新');
+}
+
+/**
+ * 应用用户自定义的情报源开关
+ * @param {Object} toggles - { sourceKey: boolean }
+ */
+export function applySourceToggles(toggles) {
+  if (!toggles) return;
+  for (const [key, val] of Object.entries(toggles)) {
+    if (INTEL_SOURCES[key]) INTEL_SOURCES[key].enabled = !!val;
+  }
+  console.log('[威胁情报] 情报源开关已应用');
 }
 
 /**
@@ -575,9 +721,13 @@ export function updateAPIKeys(keys) {
  */
 export function getSourceStatus() {
   return Object.entries(INTEL_SOURCES).reduce((acc, [key, src]) => {
+    const hasKey = !src.requiresKey || !!API_KEYS[src.keyName];
     acc[key] = {
       name: src.name,
-      enabled: src.enabled && !(key === 'phishtank' && !API_KEYS.phishtank)
+      userEnabled: src.enabled,            // 用户开关状态
+      enabled: src.enabled && hasKey,      // 实际是否生效（还需 Key）
+      requiresKey: !!src.requiresKey,
+      hasKey
     };
     return acc;
   }, {});

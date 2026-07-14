@@ -3,7 +3,7 @@
 //  功能：监听网页导航、查询威胁情报、触发告警
 // ============================================================
 
-import { checkDomainThreat, getCacheKey, inspectHost, extractHost, preloadIntelligenceSources, updateAPIKeys, getSourceStatus } from './utils/threat-intel.js';
+import { checkDomainThreat, getCacheKey, inspectHost, extractHost, preloadIntelligenceSources, updateAPIKeys, getSourceStatus, applySourceToggles } from './utils/threat-intel.js';
 
 // ---------- 配置 ----------
 const CACHE_TTL_MS = 30 * 60 * 1000; // 缓存 30 分钟
@@ -17,11 +17,15 @@ let stats = { total: 0, safe: 0, threat: 0, error: 0 };
 
 // 初始化：加载持久化统计 + 预加载情报源
 (async () => {
-  const [saved] = await Promise.all([
+  const [saved, keyStore, toggleStore] = await Promise.all([
     chrome.storage.local.get('stats'),
+    chrome.storage.local.get('apiKeys'),
+    chrome.storage.local.get('sourceEnabled'),
     preloadIntelligenceSources()
   ]);
   if (saved.stats) stats = saved.stats;
+  if (keyStore && keyStore.apiKeys) updateAPIKeys(keyStore.apiKeys);
+  if (toggleStore && toggleStore.sourceEnabled) applySourceToggles(toggleStore.sourceEnabled);
 })();
 
 // ---------- 工具函数 ----------
@@ -381,6 +385,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'UPDATE_API_KEYS':
       updateAPIKeys(message.keys || {});
+      sendResponse({ success: true });
+      break;
+
+    case 'GET_API_KEYS':
+      (async () => {
+        const store = await chrome.storage.local.get('apiKeys');
+        sendResponse(store.apiKeys || {});
+      })();
+      return true; // 保持异步通道
+
+    case 'UPDATE_SOURCE_TOGGLES':
+      applySourceToggles(message.toggles || {});
       sendResponse({ success: true });
       break;
 
