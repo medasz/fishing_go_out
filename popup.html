@@ -59,15 +59,15 @@
           <label class="settings-label" for="key-virustotal">VirusTotal API Key</label>
           <input type="password" id="key-virustotal" class="settings-input"
                  placeholder="免费申请: virustotal.com/gui/my-apikey" autocomplete="off">
-          <label class="settings-label" for="key-phishtank">PhishTank App Key</label>
-          <input type="password" id="key-phishtank" class="settings-input"
-                 placeholder="可选，留空则不使用" autocomplete="off">
           <label class="settings-label" for="key-alienvault">AlienVault OTX Key</label>
           <input type="password" id="key-alienvault" class="settings-input"
                  placeholder="可选，留空用公开 API" autocomplete="off">
           <label class="settings-label" for="key-threatbook">微步 ThreatBook Key</label>
           <input type="password" id="key-threatbook" class="settings-input"
                  placeholder="可选，国内情报 x.threatbook.com" autocomplete="off">
+          <label class="settings-label" for="key-pulsedive">Pulsedive API Key</label>
+          <input type="password" id="key-pulsedive" class="settings-input"
+                 placeholder="可选，综合情报 pulsedive.com" autocomplete="off">
           <p class="settings-hint">如使用代理，请将代理的出口 IP（非本机 IP）加入微步 IP 白名单。</p>
           <button class="action-btn btn-save" id="btn-save-keys">保存设置</button>
           <p class="settings-hint">VirusTotal / 微步 ThreatBook 免费 Key 限速，仅作为确认层参与拦截。</p>
@@ -84,7 +84,7 @@
 
     <!-- 页脚 -->
     <footer class="popup-footer">
-      <span>情报源: VirusTotal · 微步 ThreatBook · URLhaus · PhishTank · AlienVault OTX · 启发式</span>
+      <span>情报源: VirusTotal · 微步 ThreatBook · Pulsedive · URLhaus · AlienVault OTX · 启发式</span>
     </footer>
   </div>
 

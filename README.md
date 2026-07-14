@@ -8,7 +8,7 @@
 - **全屏阻断页**：命中威胁时重定向到扩展内置全屏警告页面（非页面内横幅，不含任何外部资源）
 - **右键菜单检查**：选中域名/IP 或链接，右键即可手动查询威胁情报
 - **多情报源聚合**（5 个实时 API 源 + 1 个本地引擎，免 Key 或免费 Key）：
-  - **实时 API 类**：URLhaus (abuse.ch)、AlienVault OTX、PhishTank（需免费 App Key）、**VirusTotal（多引擎扫描，需免费 API Key）**、**微步 ThreatBook（国内威胁情报，需免费 API Key）**
+  - **实时 API 类**：URLhaus (abuse.ch)、AlienVault OTX、**VirusTotal（多引擎扫描，需免费 API Key）**、**微步 ThreatBook（国内威胁情报，需免费 API Key）**、**Pulsedive（综合威胁情报，需免费 API Key）**
   - **本地启发式检测** — 品牌仿冒、DGA 域名、可疑 TLD、裸 IP 风险等
 - **检查结果弹窗**：右键检查结果以浮层形式展示，聚合所有情报源发现，支持查看原始数据
 - **桌面通知**：通过 Chrome 通知系统实时告警
@@ -75,7 +75,7 @@ fishing_go_out/
 
 - **VirusTotal**（推荐）：在 [virustotal.com/gui/my-apikey](https://www.virustotal.com/gui/my-apikey) 免费申请，提供 70+ 安全引擎的多引擎判定，作为拦截的确认层
 - **微步 ThreatBook**：在 [x.threatbook.com](https://x.threatbook.com/) 免费申请，国内威胁情报平台，提供域名/IP 的多维威胁判定（钓鱼、C2、恶意软件等），作为拦截的确认层
-- **PhishTank**：在 [phishtank.com/register.php](https://www.phishtank.com/register.php) 申请 App Key
+- **Pulsedive**：在 [pulsedive.com/account](https://pulsedive.com/account) 免费申请，综合型威胁情报平台，提供域名/IP/URL 的风险评分与关联威胁/情报源（feeds）判定
 - **AlienVault OTX**：留空使用公开 API，[注册](https://otx.alienvault.com/) 后可获得更高配额
 
 保存后对应情报源自动启用，Popup 面板可看到状态变化。
@@ -106,12 +106,6 @@ fishing_go_out/
 - 免费使用，无需 API Key
 - 查询端点: `https://urlhaus-api.abuse.ch/v1/host/`
 
-### PhishTank
-- OpenDNS 社区驱动的钓鱼 URL 验证平台
-- 支持社区投票验证，结果区分"已验证/待验证"
-- 免费使用，需申请 [开发者 App Key](https://www.phishtank.com/register.php)
-- 查询端点: `https://checkurl.phishtank.com/checkurl/`
-
 ### AlienVault OTX
 - 全球最大的开源威胁情报社区
 - 聚合数千条安全研究员的威胁脉冲 (Pulses)
@@ -135,6 +129,13 @@ fishing_go_out/
   - 域名: `https://api.threatbook.cn/v3/domain/query`
   - IP: `https://api.threatbook.cn/v3/scene/ip_reputation`
 - 判定逻辑：域名命中 ThreatBook 威胁标签（Phishing / Malware / C2 / Botnet / Fraud 等）即判定为威胁；IP 则以 `is_malicious` 或威胁标签判定，并提取 `severity` / `confidence_level` 作为置信度
+
+### Pulsedive（需免费 API Key）
+- 综合型威胁情报平台，聚合大量公开 feeds 与社区提交，覆盖域名/IP/URL
+- 免费 API Key 申请: [pulsedive.com/account](https://pulsedive.com/account)
+- 查询端点: `https://pulsedive.com/api/indicator.php?indicator={domain_or_ip}&key={apikey}`
+- 判定逻辑：综合风险等级 `risk` 为 `high` / `critical`，或任一关联威胁 `threats[].category` 命中钓鱼/恶意软件/C2/诈骗等攻击手法，或任一关联威胁自身风险为 `high` / `critical` 时判定为威胁；并提取关联威胁名称、情报源 feeds 作为证据
+- 免费配额限制：按秒/天/月限速，响应头 `X-Requests-Remaining-Month` 可监控当月剩余额度，触发 429 时自动跳过
 - 定位为**确认层**：在情报源列表中排最后（启发式前），仅当其他源均未命中时才触发，以节省免费配额
 - 免费配额限制：按积分/次计费，触发配额耗尽时 `response_code` 非 0，自动跳过（不影响其他源拦截）
 
@@ -146,7 +147,7 @@ fishing_go_out/
 - **内网/保留 IP 识别**：识别 localhost、私有网段等非公开地址
 
 ### 数据源选型说明
-本扩展**仅采用实时 API 查询类情报源**（URLhaus / PhishTank / AlienVault OTX / VirusTotal / 微步 ThreatBook）与本地启发式引擎，不下载/缓存本地块列表文件。此前曾接入的块列表类源（Phishing Army、Phishing.Database、CERT Polska、CyberCrime-Tracker、CINS Army、ET Compromised、GreenSnow、Honeynet Asia）因依赖下载文本/CSV 文件并在本地匹配，与"导航前实时查询、零本地文件依赖"的设计目标不符，已移除。以下类型因不适用于实时 URL 拦截（需文件哈希/漏洞库/匿名网络识别/额外聚合层）也未采用：
+本扩展**仅采用实时 API 查询类情报源**（URLhaus / AlienVault OTX / VirusTotal / 微步 ThreatBook / Pulsedive）与本地启发式引擎，不下载/缓存本地块列表文件。此前曾接入的块列表类源（Phishing Army、Phishing.Database、CERT Polska、CyberCrime-Tracker、CINS Army、ET Compromised、GreenSnow、Honeynet Asia）因依赖下载文本/CSV 文件并在本地匹配，与"导航前实时查询、零本地文件依赖"的设计目标不符，已移除。以下类型因不适用于实时 URL 拦截（需文件哈希/漏洞库/匿名网络识别/额外聚合层）也未采用：
 
 - **文件哈希类**：Malshare、CCAM SHA1 列表（浏览器导航只看到域名/IP，无文件可校验）
 - **CVE 漏洞类**：eCrimeLabs Metasploit CVE（面向资产漏洞优先级，非 URL 拦截）

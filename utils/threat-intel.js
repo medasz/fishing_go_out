@@ -6,11 +6,11 @@
 // ---------- 情报源 API Key 配置 ----------
 // 可选：填入你在对应平台申请的免费 API Key 以启用相关情报源
 const API_KEYS = {
-  phishtank: '',   // 申请地址: https://www.phishtank.com/register.php
   alienvault: '',  // 申请地址: https://otx.alienvault.com/ (留空则使用公开 API)
   abuseipdb: '',   // 申请地址: https://www.abuseipdb.com/ (仅 IP 查询)
   virustotal: '',  // 申请地址: https://www.virustotal.com/gui/my-apikey (免费 Key，多引擎扫描)
-  threatbook: ''   // 申请地址: https://x.threatbook.com/ (国内威胁情报，需免费 API Key)
+  threatbook: '',  // 申请地址: https://x.threatbook.com/ (国内威胁情报，需免费 API Key)
+  pulsedive: ''    // 申请地址: https://pulsedive.com/account (免费 API Key)
 };
 
 // ---------- VirusTotal 配置 ----------
@@ -26,6 +26,34 @@ const TB_MALICIOUS_JUDGMENTS = new Set([
   'Phishing', 'Malware', 'C2', 'Botnet', 'Fraud', 'Scam',
   'Ransomware', 'Trojan', 'Backdoor', 'Exploit', 'Mining', 'Gambling'
 ]);
+
+// 微步 tags_classes 中的攻击手法标签，命中即视为威胁
+const TB_MALICIOUS_TAGS = new Set([
+  '仿冒', '仿冒软件下载站', '仿冒网站', '钓鱼', '钓鱼网站', '恶意软件', 'Malware',
+  'C2', '远控', '远控 C2', '木马', 'Trojan', '勒索', 'Ransomware',
+  '挖矿', 'Mining', 'CoinMiner', 'MiningPool', '矿池',
+  '僵尸网络', 'Botnet', '后门', 'Backdoor', 'APT', '蠕虫', '病毒',
+  '窃密', '信息窃取', '间谍软件', '供应链攻击', '水坑攻击',
+  '欺诈', '诈骗', 'Scam', 'Fraud', '垃圾邮件', 'Spam',
+  '漏洞利用', 'Exploit', '扫描', 'Scanner', '暴力破解', 'Brute Force',
+  '代理', 'Proxy', 'VPN', '僵尸', 'Zombie'
+]);
+
+function extractThreatBookTags(info) {
+  const tags = [];
+  const tcs = info.tags_classes || [];
+  for (const tc of tcs) {
+    if (typeof tc === 'string') {
+      tags.push(tc);
+    } else if (tc && typeof tc === 'object') {
+      if (Array.isArray(tc.tags)) tags.push(...tc.tags);
+      if (typeof tc.name === 'string') tags.push(tc.name);
+      if (typeof tc.tags_type === 'string') tags.push(tc.tags_type);
+    }
+  }
+  return tags;
+}
+
 const TB_JUDGMENT_MAP = {
   Phishing: '钓鱼网站', Malware: '恶意软件', C2: '远控 C2', Botnet: '僵尸网络',
   Fraud: '欺诈', Scam: '诈骗', Spam: '垃圾邮件', Suspicious: '可疑',
@@ -33,6 +61,80 @@ const TB_JUDGMENT_MAP = {
   Mining: '挖矿', Gambling: '赌博', DDoS: 'DDoS', Scanner: '扫描',
   'Brute Force': '暴力破解', Zombie: '傀儡机', Proxy: '代理', VPN: 'VPN'
 };
+
+// ---------- 微步 ThreatBook 通用查询与解析 ----------
+async function queryThreatBookEndpoint(host, endpoint, isIpHost, key) {
+  const url = `https://api.threatbook.cn/v3/${endpoint}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TB_TIMEOUT);
+
+  try {
+    const body = new URLSearchParams({ apikey: key, resource: host, lang: 'zh' });
+    if (isIpHost) body.set('realtime_verdict', 'true');
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    // response_code 非 0 表示错误：如 Key 无效、配额耗尽、无接口权限
+    if (data.response_code !== 0) {
+      console.warn(`[ThreatBook] ${endpoint} 查询失败 (code=${data.response_code}): ${data.verbose_msg}`);
+      return { data: null, noPermission: true, code: data.response_code, msg: data.verbose_msg };
+    }
+
+    return { data, noPermission: false };
+  } catch (err) {
+    console.warn(`[ThreatBook] ${endpoint} 查询失败: ${err.message}`);
+    return { data: null, noPermission: false, error: err.message };
+  }
+}
+
+function parseThreatBookResponse(data, host, isIpHost) {
+  if (!data) return null;
+  const info = isIpHost ? data.ips?.[host] : data.domains?.[host];
+  if (!info) return null;
+
+  const judgments = (info.judgments || []).filter(j => TB_MALICIOUS_JUDGMENTS.has(j));
+  const tags = extractThreatBookTags(info);
+  const maliciousTags = tags.filter(t => TB_MALICIOUS_TAGS.has(t));
+  const isMalicious = info.is_malicious === true || judgments.length > 0 || maliciousTags.length > 0;
+  if (!isMalicious) return null;
+
+
+  // 优先使用 judgments 作为威胁理由；没有 judgments 时使用攻击手法标签
+  const reasons = judgments.length > 0
+    ? judgments.map(j => TB_JUDGMENT_MAP[j] || j)
+    : [...new Set(maliciousTags)];
+
+  const strongByJudgment = judgments.some(j =>
+    ['Phishing', 'Malware', 'C2', 'Botnet', 'Ransomware', 'Trojan', 'Backdoor', 'Fraud', 'Scam'].includes(j));
+  const strongByTag = maliciousTags.some(t =>
+    ['仿冒软件下载站', '钓鱼', '钓鱼网站', '恶意软件', 'C2', '远控', '木马', '勒索', '挖矿', '僵尸网络', '后门', 'APT', '窃密', '欺诈', '诈骗'].includes(t) ||
+    ['Phishing', 'Malware', 'C2', 'Botnet', 'Ransomware', 'Trojan', 'Backdoor', 'Fraud', 'Scam'].includes(t));
+
+  return {
+    is_threat: true,
+    source: '微步 ThreatBook',
+    domain: host,
+    threat_type: reasons.join('、') || (isIpHost ? '可疑 IP' : '可疑域名'),
+    judgments: judgments.length ? judgments : (info.judgments || []),
+    tags: maliciousTags,
+    confidence_level: info.confidence_level || info.confidence || null,
+    severity: info.severity || null,
+    permalink: info.permalink || null,
+    description: `微步情报命中威胁类型: ${reasons.join('、')}`,
+    confidence: strongByJudgment || strongByTag ||
+      info.confidence_level === 'high' || info.confidence === 'high' ||
+      info.severity === 'critical' || info.severity === 'high' ? 'high' : 'medium'
+  };
+}
 
 // ---------- 以下情报源均为实时 API 查询，不下载本地块列表文件 ----------
 
@@ -94,58 +196,6 @@ const INTEL_SOURCES = {
         return null; // 无威胁
       } catch (err) {
         console.warn(`[URLhaus] 查询失败: ${err.message}`);
-        return null;
-      }
-    }
-  },
-
-  // PhishTank — 钓鱼 URL 社区数据库 (免费，需申请 App Key)
-  phishtank: {
-    name: 'PhishTank',
-    endpoint: 'https://checkurl.phishtank.com/checkurl/',
-    enabled: false,  // 默认关闭，可在弹窗开关启用
-    requiresKey: true,
-    keyName: 'phishtank',
-    timeout: 10000,
-    check: async (host) => {
-      const key = API_KEYS.phishtank;
-      if (!key || isIP(host)) return null;
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
-
-      try {
-        const resp = await fetch('https://checkurl.phishtank.com/checkurl/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            url: `http://${host}/`,
-            format: 'json',
-            app_key: key
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timer);
-
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-
-        if (data.results && data.results.in_database && data.results.valid) {
-          return {
-            is_threat: true,
-            source: 'PhishTank',
-            domain: host,
-            threat_type: '钓鱼网站',
-            phish_id: data.results.phish_id || null,
-            phish_detail_url: data.results.phish_detail_url || '',
-            verified: data.results.verified || false,
-            verified_at: data.results.verified_at || null,
-            description: `该域名已被 PhishTank 收录为钓鱼网站${data.results.verified ? '(已验证)' : '(待验证)'}`
-          };
-        }
-        return null;
-      } catch (err) {
-        console.warn(`[PhishTank] 查询失败: ${err.message}`);
         return null;
       }
     }
@@ -311,7 +361,7 @@ const INTEL_SOURCES = {
     }
   },
 
-  // 微步在线 ThreatBook — 国内威胁情报平台 (需免费 API Key，作为确认层；默认关闭，可在弹窗开关启用)
+  // 微步在线 ThreatBook — 国内威胁情报平台 (需免费 API Key；默认关闭，可在弹窗开关启用)
   threatbook: {
     name: '微步 ThreatBook',
     enabled: false,
@@ -320,83 +370,131 @@ const INTEL_SOURCES = {
     timeout: TB_TIMEOUT,
     check: async (host) => {
       const key = API_KEYS.threatbook;
-      if (!key) return null;
+      if (!key) {
+        console.log('[ThreatBook] 未配置 API Key，跳过');
+        return null;
+      }
+      if (!INTEL_SOURCES.threatbook.enabled) {
+        console.log('[ThreatBook] 情报源未启用，跳过');
+        return null;
+      }
 
       const isIpHost = isIP(host);
-      const api = isIpHost ? 'scene/ip_reputation' : 'domain/query';
-      const url = `https://api.threatbook.cn/v3/${api}`;
+      console.log(`[ThreatBook] 开始查询 ${host} (类型: ${isIpHost ? 'IP' : '域名'})`);
+
+      // 1. 尝试专用接口：IP 用 ip_reputation，域名用 domain/query
+      const primaryEndpoint = isIpHost ? 'scene/ip_reputation' : 'domain/query';
+      const primary = await queryThreatBookEndpoint(host, primaryEndpoint, isIpHost, key);
+
+      // 专用接口成功返回数据 → 解析并命中则直接返回
+      if (primary && primary.data && !primary.noPermission) {
+        const result = parseThreatBookResponse(primary.data, host, isIpHost);
+        if (result) {
+          console.log(`[ThreatBook] ${primaryEndpoint} 命中威胁:`, result);
+          return result;
+        }
+        console.log(`[ThreatBook] ${primaryEndpoint} 返回数据但未命中威胁`);
+      }
+
+      // 2. 专用接口无权限、网络失败、未返回该主机数据 → 降级到 scene/dns
+      //    免费 Key 通常有 scene/dns 权限，且 tags_classes 包含仿冒/攻击标签
+      const primaryInfo = primary.data && (isIpHost ? primary.data.ips?.[host] : primary.data.domains?.[host]);
+      if (!primary || primary.noPermission || primary.error || !primary.data || !primaryInfo) {
+        console.log(`[ThreatBook] ${primaryEndpoint} 未命中/无权限/无数据，降级到 scene/dns`);
+        const fallback = await queryThreatBookEndpoint(host, 'scene/dns', isIpHost, key);
+        if (fallback && fallback.data && !fallback.noPermission) {
+          const result = parseThreatBookResponse(fallback.data, host, isIpHost);
+          if (result) {
+            console.log('[ThreatBook] scene/dns 命中威胁:', result);
+            return result;
+          }
+        }
+      }
+
+      console.log(`[ThreatBook] ${host} 未命中威胁`);
+      return null;
+    }
+
+  },
+
+  // Pulsedive — 综合威胁情报平台 (免费 API Key，支持域名/IP/URL)
+  pulsedive: {
+    name: 'Pulsedive',
+    endpoint: 'https://pulsedive.com/api/indicator.php',
+    enabled: true,
+    requiresKey: true,
+    keyName: 'pulsedive',
+    timeout: 12000,
+    check: async (host) => {
+      const key = API_KEYS.pulsedive;
+      if (!key) return null;
+
+      // 构造查询 URL：indicator 可为域名或 IP，key 可选但建议带上以提高限额
+      const url = new URL('https://pulsedive.com/api/indicator.php');
+      url.searchParams.set('indicator', host);
+      url.searchParams.set('pretty', '0');
+      url.searchParams.set('key', key);
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TB_TIMEOUT);
+      const timer = setTimeout(() => controller.abort(), 12000);
 
       try {
-        const body = new URLSearchParams({ apikey: key, resource: host, lang: 'zh' });
-        if (isIpHost) body.set('realtime_verdict', 'true');
-
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body,
-          signal: controller.signal
-        });
+        const resp = await fetch(url, { signal: controller.signal });
         clearTimeout(timer);
 
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-
-        // response_code 非 0 表示错误（如 Key 无效、配额耗尽），优雅降级
-        if (data.response_code !== 0) {
-          console.warn(`[ThreatBook] 查询失败 (code=${data.response_code}): ${data.verbose_msg}`);
+        if (resp.status === 401) {
+          console.warn('[Pulsedive] API Key 无效 (401)');
           return null;
         }
+        if (resp.status === 404) return null; // 指标库中无记录
+        if (resp.status === 429) {
+          console.warn('[Pulsedive] 触发速率限制 (429)，本次跳过查询');
+          return null;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-        if (isIpHost) {
-          const info = data.ips?.[host];
-          if (!info) return null;
+        const data = await resp.json();
+        if (data.error) return null;
 
-          const malicious = info.is_malicious === true ||
-            (info.judgments || []).some(j => TB_MALICIOUS_JUDGMENTS.has(j));
-          if (!malicious) return null;
+        // 判定标准：
+        // 1) 综合风险等级为 high / critical
+        // 2) 任一关联威胁的 category 命中攻击手法（钓鱼/恶意软件/C2/诈骗等）
+        // 3) 任一关联威胁自身风险为 high / critical
+        const THREAT_RISKS = new Set(['high', 'critical']);
+        const risk = (data.risk || '').toLowerCase();
 
-          const judgments = (info.judgments || []).map(j => TB_JUDGMENT_MAP[j] || j);
-          const severity = info.severity || info.confidence_level || '未知';
+        const threats = Array.isArray(data.threats) ? data.threats : [];
+        const threatCats = threats.map(t => (t.category || '').toLowerCase());
+        const catHit = threatCats.some(c =>
+          /phish|malware|c2|botnet|scam|fraud|ransom|trojan|backdoor|exploit|mining|spam/.test(c));
+        const highThreat = threats.some(t => THREAT_RISKS.has((t.risk || '').toLowerCase()));
+
+        if (THREAT_RISKS.has(risk) || catHit || highThreat) {
+          const names = threats.map(t => t.name).filter(Boolean);
+          const catLabels = [...new Set(threatCats)].filter(Boolean);
+          // 威胁类型优先级：钓鱼 > 恶意软件 > 其他
+          let threatType = '恶意活动';
+          if (catLabels.some(c => /phish/.test(c))) threatType = '钓鱼网站';
+          else if (catLabels.some(c => /malware/.test(c))) threatType = '恶意软件';
+          else if (catLabels.length) threatType = catLabels.join(', ');
+
           return {
             is_threat: true,
-            source: '微步 ThreatBook',
+            source: 'Pulsedive',
             domain: host,
-            threat_type: judgments.join('、') || '恶意 IP',
-            judgments: info.judgments,
-            confidence_level: info.confidence_level || null,
-            severity: info.severity || null,
-            description: `微步判定为恶意 IP（${severity}）` +
-              (judgments.length ? `，类型: ${judgments.slice(0, 5).join('、')}` : ''),
-            confidence: (info.confidence_level === 'high' ||
-              info.severity === 'critical' || info.severity === 'high') ? 'high' : 'medium'
+            threat_type: threatType,
+            risk,
+            threats: names,
+            feeds: (Array.isArray(data.feeds) ? data.feeds : []).map(f => f.name).filter(Boolean),
+            description: `Pulsedive 风险等级 "${data.risk || 'unknown'}"` +
+              (names.length ? `，关联威胁: ${names.slice(0, 5).join('、')}` : '') +
+              (catLabels.length ? `（分类: ${catLabels.join('、')}）` : ''),
+            confidence: risk === 'critical' ? 'high' : 'medium'
           };
         }
-
-        // 域名查询
-        const info = data.domains?.[host];
-        if (!info) return null;
-        const judgments = (info.judgments || []).filter(j => TB_MALICIOUS_JUDGMENTS.has(j));
-        if (judgments.length === 0) return null;
-
-        const zh = judgments.map(j => TB_JUDGMENT_MAP[j] || j);
-        const strong = judgments.some(j =>
-          ['Phishing', 'Malware', 'C2', 'Botnet', 'Ransomware', 'Trojan', 'Backdoor', 'Fraud', 'Scam'].includes(j));
-        return {
-          is_threat: true,
-          source: '微步 ThreatBook',
-          domain: host,
-          threat_type: zh.join('、'),
-          judgments,
-          confidence_level: info.confidence_level || null,
-          severity: info.severity || null,
-          description: `微步情报命中威胁类型: ${zh.join('、')}`,
-          confidence: strong ? 'high' : 'medium'
-        };
+        return null;
       } catch (err) {
-        console.warn(`[ThreatBook] 查询失败: ${err.message}`);
+        console.warn(`[Pulsedive] 查询失败: ${err.message}`);
         return null;
       }
     }
@@ -628,15 +726,26 @@ function buildDescription(threatTypes, blockedBy, urlCount) {
  */
 export async function checkDomainThreat(domain) {
   // 按顺序查询各情报源
-  for (const [key, source] of Object.entries(INTEL_SOURCES)) {
-    if (!source.enabled) continue;
+  for (const [, source] of Object.entries(INTEL_SOURCES)) {
+    if (!source.enabled) {
+      console.log(`[威胁情报] ${source.name} 未启用，跳过`);
+      continue;
+    }
+    if (source.requiresKey && !API_KEYS[source.keyName]) {
+      console.log(`[威胁情报] ${source.name} 需要 API Key 但未配置，跳过`);
+      continue;
+    }
 
     try {
+      console.log(`[威胁情报] 开始查询 ${source.name}: ${domain}`);
       const result = await source.check(domain);
       // is_threat===false 为信息性提示（如公网裸IP），不作为威胁上报，避免误报
       if (result && result.is_threat !== false) {
         console.log(`[威胁情报] ${source.name} 命中: ${domain}`, result);
         return result;
+      }
+      if (result) {
+        console.log(`[威胁情报] ${source.name} 返回信息性结果: ${domain}`, result);
       }
     } catch (err) {
       console.error(`[威胁情报] ${source.name} 异常:`, err);
@@ -656,21 +765,34 @@ export async function checkDomainThreat(domain) {
 export async function inspectHost(host) {
   const findings = [];
 
-  for (const [key, source] of Object.entries(INTEL_SOURCES)) {
-    if (!source.enabled) continue;
+  for (const [, source] of Object.entries(INTEL_SOURCES)) {
+    if (!source.enabled) {
+      console.log(`[威胁情报] ${source.name} 未启用，跳过`);
+      continue;
+    }
 
     // 需要 Key 但未配置的源，自动跳过
-    if (source.requiresKey && !API_KEYS[source.keyName]) continue;
+    if (source.requiresKey && !API_KEYS[source.keyName]) {
+      console.log(`[威胁情报] ${source.name} 需要 API Key 但未配置，跳过`);
+      continue;
+    }
 
     try {
+      console.log(`[威胁情报] 手动检查开始查询 ${source.name}: ${host}`);
       const r = await source.check(host);
-      if (r) findings.push(r);
+      if (r) {
+        findings.push(r);
+        console.log(`[威胁情报] ${source.name} 返回:`, r);
+      } else {
+        console.log(`[威胁情报] ${source.name} 未命中`);
+      }
     } catch (err) {
       console.error(`[威胁情报] ${source.name} 异常:`, err);
     }
   }
 
   const threats = findings.filter(f => f.is_threat === true);
+
 
   return {
     host,
@@ -692,14 +814,14 @@ export async function preloadIntelligenceSources() {
 
 /**
  * 更新 API Key 配置
- * @param {Object} keys - { phishtank, alienvault, abuseipdb }
+ * @param {Object} keys - { alienvault, abuseipdb, virustotal, threatbook, pulsedive }
  */
 export function updateAPIKeys(keys) {
-  if (keys.phishtank !== undefined) API_KEYS.phishtank = keys.phishtank;
   if (keys.alienvault !== undefined) API_KEYS.alienvault = keys.alienvault;
   if (keys.abuseipdb !== undefined) API_KEYS.abuseipdb = keys.abuseipdb;
   if (keys.virustotal !== undefined) API_KEYS.virustotal = keys.virustotal;
   if (keys.threatbook !== undefined) API_KEYS.threatbook = keys.threatbook;
+  if (keys.pulsedive !== undefined) API_KEYS.pulsedive = keys.pulsedive;
   // 注意：源的启用/禁用由用户的情报源开关(sourceEnabled)控制，不再随 Key 自动启用
   console.log('[威胁情报] API Key 已更新');
 }

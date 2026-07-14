@@ -21,8 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sourceList = document.getElementById('source-list');
     sourceList.innerHTML = Object.entries(sourceStatus).map(([key, s]) => {
 
-      const keyHint = (s.requiresKey && !s.hasKey)
-        ? (key === 'phishtank' ? ' (需配置 App Key)' : ' (需配置 API Key)') : '';
+      const keyHint = (s.requiresKey && !s.hasKey) ? ' (需配置 API Key)' : '';
       return `<div class="source-item">
         <label class="source-toggle">
           <input type="checkbox" data-key="${key}" ${s.userEnabled ? 'checked' : ''}>
@@ -47,25 +46,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ---------- 加载并保存 API Key 设置 ----------
   const KEY_FIELDS = {
     virustotal: document.getElementById('key-virustotal'),
-    phishtank: document.getElementById('key-phishtank'),
     alienvault: document.getElementById('key-alienvault'),
-    threatbook: document.getElementById('key-threatbook')
+    threatbook: document.getElementById('key-threatbook'),
+    pulsedive: document.getElementById('key-pulsedive')
   };
 
   const savedKeys = await chrome.runtime.sendMessage({ action: 'GET_API_KEYS' });
   if (savedKeys) {
     if (savedKeys.virustotal) KEY_FIELDS.virustotal.value = savedKeys.virustotal;
-    if (savedKeys.phishtank) KEY_FIELDS.phishtank.value = savedKeys.phishtank;
     if (savedKeys.alienvault) KEY_FIELDS.alienvault.value = savedKeys.alienvault;
     if (savedKeys.threatbook) KEY_FIELDS.threatbook.value = savedKeys.threatbook;
+    if (savedKeys.pulsedive) KEY_FIELDS.pulsedive.value = savedKeys.pulsedive;
   }
 
   document.getElementById('btn-save-keys').addEventListener('click', async () => {
     const keys = {
       virustotal: KEY_FIELDS.virustotal.value.trim(),
-      phishtank: KEY_FIELDS.phishtank.value.trim(),
       alienvault: KEY_FIELDS.alienvault.value.trim(),
-      threatbook: KEY_FIELDS.threatbook.value.trim()
+      threatbook: KEY_FIELDS.threatbook.value.trim(),
+      pulsedive: KEY_FIELDS.pulsedive.value.trim()
     };
     await chrome.storage.local.set({ apiKeys: keys });
     await chrome.runtime.sendMessage({ action: 'UPDATE_API_KEYS', keys });
