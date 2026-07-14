@@ -7,7 +7,6 @@ import { checkDomainThreat, getCacheKey, inspectHost, extractHost, preloadIntell
 
 // ---------- 配置 ----------
 const CACHE_TTL_MS = 30 * 60 * 1000; // 缓存 30 分钟
-const DEBOUNCE_MS = 500;             // 防抖，避免短时间内重复查询同一域名
 
 // ---------- 运行时状态 ----------
 const domainCache = new Map();        // 域名 -> { threat, timestamp }
@@ -93,63 +92,38 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   // 只处理主框架（顶层页面），忽略 iframe
   if (details.frameId !== 0) return;
 
-  // 忽略浏览器内部页面
+  // 忽略浏览器内部页面 / 检测页本身（chrome-extension://）
   if (shouldSkipUrl(details.url)) return;
 
   const domain = extractDomain(details.url);
   if (!domain) return;
 
-  stats.total++;
-  await saveStats();
-
-  console.log(`[钓鱼拦截] 预检测域名: ${domain}`);
-
   // 用户已手动放行此域名 → 直接放行，不查询
   if (exceptionDomains.has(domain)) {
     console.log(`[钓鱼拦截] 用户已放行: ${domain}，跳过拦截`);
-    stats.safe++;
-    await saveStats();
     return;
   }
 
-  // 防抖：短时间内重复导航到同一域名，走缓存
+  // 缓存命中：已确认安全 / 威胁，直接出结论（零延迟放行或拦截）
   const lastCheck = domainCache.get(domain);
-  if (lastCheck && (Date.now() - lastCheck.timestamp) < DEBOUNCE_MS) {
+  if (lastCheck && (Date.now() - lastCheck.timestamp) < CACHE_TTL_MS) {
     if (lastCheck.threat) {
-      // 之前判定为威胁，再次拦截
+      console.warn(`[钓鱼拦截] ⚠️ 缓存命中威胁，拦截: ${domain}`);
+      stats.total++; stats.threat++; await saveStats();
       redirectToBlockedPage(details.tabId, domain, details.url, lastCheck.threat);
+      markThreatBadge(details.tabId);
+      notifyThreat(domain, lastCheck.threat);
+    } else {
+      console.log(`[钓鱼拦截] ✓ 缓存命中安全: ${domain}`);
+      stats.total++; stats.safe++; await saveStats();
+      markSafeBadge(details.tabId);
     }
     return;
   }
 
-  const threatInfo = await queryThreat(domain);
-
-  if (threatInfo) {
-    stats.threat++;
-    await saveStats();
-    console.warn(`[钓鱼拦截] ⚠️ 拦截威胁: ${domain}`, threatInfo);
-
-    // 重定向到内置阻断页，不加载目标网站任何资源
-    redirectToBlockedPage(details.tabId, domain, details.url, threatInfo);
-
-    // Chrome 桌面通知
-    chrome.notifications.create(`threat-${domain}`, {
-      type: 'basic',
-      iconUrl: 'images/icon128.png',
-      title: '⚠️ 安全告警 - 已拦截威胁网站',
-      message: `${domain}\n威胁类型: ${threatInfo.threat_type || '未知'}\n来源: ${threatInfo.source}`,
-      priority: 2
-    });
-
-    chrome.action.setBadgeText({ text: '⚠️', tabId: details.tabId });
-    chrome.action.setBadgeBackgroundColor({ color: '#FF0000', tabId: details.tabId });
-  } else {
-    stats.safe++;
-    await saveStats();
-    console.log(`[钓鱼拦截] ✓ 安全域名: ${domain}`);
-    chrome.action.setBadgeText({ text: '✓', tabId: details.tabId });
-    chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId: details.tabId });
-  }
+  // 未知域名：先转入「安全检测中转页」，目标站不会加载，检测完再决定
+  console.log(`[钓鱼拦截] 未知域名，转入检测页: ${domain}`);
+  redirectToCheckingPage(details.tabId, domain, details.url);
 });
 
 // ---------- 重定向到内置阻断页面 ----------
@@ -174,6 +148,38 @@ async function redirectToBlockedPage(tabId, domain, originalUrl, threatInfo) {
   } catch (err) {
     console.error('[钓鱼拦截] 重定向到阻断页失败:', err);
   }
+}
+
+// ---------- 重定向到内置「安全检测中转页」 ----------
+// 该页面不会加载目标站任何资源，检测完成后再由页面决定跳转或拦截
+function redirectToCheckingPage(tabId, domain, originalUrl) {
+  const checkingUrl = chrome.runtime.getURL(
+    `checking.html?domain=${encodeURIComponent(domain)}&target=${encodeURIComponent(originalUrl)}`
+  );
+  return chrome.tabs.update(tabId, { url: checkingUrl }).catch(err => {
+    console.error('[钓鱼拦截] 重定向到检测页失败:', err);
+  });
+}
+
+// ---------- Badge / 通知 辅助函数 ----------
+function markThreatBadge(tabId) {
+  chrome.action.setBadgeText({ text: '⚠️', tabId });
+  chrome.action.setBadgeBackgroundColor({ color: '#FF0000', tabId });
+}
+
+function markSafeBadge(tabId) {
+  chrome.action.setBadgeText({ text: '✓', tabId });
+  chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
+}
+
+function notifyThreat(domain, threatInfo) {
+  chrome.notifications.create(`threat-${domain}`, {
+    type: 'basic',
+    iconUrl: 'images/icon128.png',
+    title: '⚠️ 安全告警 - 已拦截威胁网站',
+    message: `${domain}\n威胁类型: ${threatInfo.threat_type || '未知'}\n来源: ${threatInfo.source}`,
+    priority: 2
+  });
 }
 
 // ============================================================
@@ -436,6 +442,69 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
       })();
       return true;
+
+    case 'REQUEST_CHECK':
+      // 检测页发来的检测请求：查询结果并通知检测页
+      (async () => {
+        const domain = message.domain;
+        const target = message.target;
+        if (!domain) {
+          sendResponse({ error: 'No domain' });
+          return;
+        }
+        const threatInfo = await queryThreat(domain);
+        const tid = message.tabId;
+        // 用户已在检测过程中跳过/放行 → 放弃拦截，避免把已访问站点弹回
+        if (exceptionDomains.has(domain)) {
+          stats.total++; stats.safe++; await saveStats();
+          if (tid != null) markSafeBadge(tid);
+          sendResponse({ domain, threatInfo: null });
+          return;
+        }
+        stats.total++;
+        if (threatInfo) {
+          stats.threat++;
+          await saveStats();
+          console.warn(`[钓鱼拦截] ⚠️ 检测页发现威胁: ${domain}`, threatInfo);
+          if (tid != null) {
+            redirectToBlockedPage(tid, domain, target, threatInfo);
+            markThreatBadge(tid);
+          }
+          notifyThreat(domain, threatInfo);
+          sendResponse({ domain, threatInfo });
+        } else {
+          stats.safe++;
+          await saveStats();
+          console.log(`[钓鱼拦截] ✓ 检测页安全: ${domain}`);
+          if (tid != null) markSafeBadge(tid);
+          sendResponse({ domain, threatInfo: null });
+        }
+      })();
+      return true; // 保持异步通道
+
+    case 'PROCEED_FROM_CHECKING':
+      // 用户在检测页手动直接跳转 / 检测结果为安全 → 放行目标站
+      (async () => {
+        const targetUrl = message.url;
+        const domain = message.domain;
+        if (!targetUrl || !domain) {
+          sendResponse({ error: 'Missing url or domain' });
+          return;
+        }
+        // 加入例外白名单 + 标记为安全，避免再次进入检测页
+        exceptionDomains.add(domain);
+        domainCache.set(domain, { threat: null, timestamp: Date.now() });
+        console.log(`[钓鱼拦截] 用户从检测页放行: ${domain}`);
+        const tid = message.tabId || (sender.tab && sender.tab.id);
+        if (tid != null) markSafeBadge(tid);
+        try {
+          await chrome.tabs.update(tid, { url: targetUrl });
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: String(err) });
+        }
+      })();
+      return true; // 保持异步通道
 
     default:
       sendResponse({ error: 'Unknown action' });
