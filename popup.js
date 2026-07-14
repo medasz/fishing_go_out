@@ -138,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (currentTab && currentTab.url) {
       const domain = new URL(currentTab.url).hostname;
-      const reportUrl = `https://urlhaus.abuse.ch/browse.php?search=${encodeURIComponent(domain)}`;
+      const reportUrl = `https://urlhaus.abuse.ch/host/${encodeURIComponent(domain)}/`;
       chrome.tabs.create({ url: reportUrl });
     }
   });

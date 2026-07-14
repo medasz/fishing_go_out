@@ -320,7 +320,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
   // 尝试拆分 domain 和时间戳
   const dashIdx = id.lastIndexOf('-');
   const domain = dashIdx > 0 ? id.substring(0, dashIdx) : id;
-  chrome.tabs.create({ url: `https://urlhaus.abuse.ch/browse.php?search=${encodeURIComponent(domain)}` });
+  chrome.tabs.create({ url: `https://urlhaus.abuse.ch/host/${encodeURIComponent(domain)}/` });
 });
 
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {

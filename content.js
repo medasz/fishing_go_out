@@ -126,7 +126,7 @@
 
     document.getElementById('fg-check-close').addEventListener('click', removeCheckPopup);
     document.getElementById('fg-chk-report').addEventListener('click', () => {
-      window.open(`https://urlhaus.abuse.ch/browse.php?search=${encodeURIComponent(host)}`, '_blank');
+      window.open(`https://urlhaus.abuse.ch/host/${encodeURIComponent(host)}/`, '_blank');
     });
     document.getElementById('fg-chk-raw').addEventListener('click', () => {
       const panel = document.getElementById('fg-check-raw-panel');
