@@ -113,6 +113,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (res && res.success) renderWhitelist([]);
   });
 
+  // 恢复预置
+  document.getElementById('btn-reset-whitelist').addEventListener('click', async () => {
+    const res = await chrome.runtime.sendMessage({ action: 'RESET_WHITELIST' });
+    if (res && res.whitelist) renderWhitelist(res.whitelist);
+  });
+
   // ---------- 加载并保存 API Key 设置 ----------
   const KEY_FIELDS = {
     virustotal: document.getElementById('key-virustotal'),

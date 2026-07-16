@@ -376,8 +376,25 @@ body {
   background: #e8f0fe;
   color: #1a73e8;
   border: 1px solid #d2e3fc;
+  width: 100%;
 }
 
 .btn-add-current:hover {
   background: #d2e3fc;
+}
+
+.whitelist-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-reset {
+  background: #eef7ee;
+  color: #2E7D32;
+  border: 1px solid #d6ecd6;
+}
+
+.btn-reset:hover {
+  background: #d6ecd6;
 }
