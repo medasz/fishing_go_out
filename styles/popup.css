@@ -314,6 +314,14 @@ body {
   margin-bottom: 8px;
 }
 
+.whitelist-search-wrap {
+  margin-bottom: 8px;
+}
+
+.whitelist-search-wrap .settings-input {
+  width: 100%;
+}
+
 .whitelist-empty {
   font-size: 12px;
   color: #bbb;

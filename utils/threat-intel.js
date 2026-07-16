@@ -10,7 +10,8 @@ const API_KEYS = {
   abuseipdb: '',   // 申请地址: https://www.abuseipdb.com/ (仅 IP 查询)
   virustotal: '',  // 申请地址: https://www.virustotal.com/gui/my-apikey (免费 Key，多引擎扫描)
   threatbook: '',  // 申请地址: https://x.threatbook.com/ (国内威胁情报，需免费 API Key)
-  pulsedive: ''    // 申请地址: https://pulsedive.com/account (免费 API Key)
+  pulsedive: '',   // 申请地址: https://pulsedive.com/account (免费 API Key)
+  urlhaus: ''      // 申请地址: https://auth.abuse.ch/ (免费 Auth-Key，URLhaus 查询必填，否则返回 401)
 };
 
 // ---------- VirusTotal 配置 ----------
@@ -140,25 +141,38 @@ function parseThreatBookResponse(data, host, isIpHost) {
 
 // ---------- 情报源配置 ----------
 const INTEL_SOURCES = {
-  // URLhaus - 恶意软件分发 URL 数据库 (免费，无需 API Key)
+  // URLhaus - 恶意软件分发 URL 数据库 (免费，但自 2024 年起查询必须携带 Auth-Key)
   urlhaus: {
     name: 'URLhaus',
     endpoint: 'https://urlhaus-api.abuse.ch/v1/host/',
     enabled: true,
+    requiresKey: true,        // 未配置 Auth-Key 时自动跳过，避免无谓的 401 报错
+    keyName: 'urlhaus',
     timeout: 10000,
     check: async (domain) => {
+      const key = API_KEYS.urlhaus;
+      if (!key) return null;
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
 
       try {
         const resp = await fetch('https://urlhaus-api.abuse.ch/v1/host/', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Auth-Key': key
+          },
           body: new URLSearchParams({ host: domain }),
           signal: controller.signal
         });
         clearTimeout(timer);
 
+        // 401 = Auth-Key 缺失/无效，明确提示并跳过，不再当作未知错误抛出
+        if (resp.status === 401) {
+          console.warn('[URLhaus] Auth-Key 缺失或无效 (401)，请在设置中填写免费 Auth-Key');
+          return null;
+        }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
         const data = await resp.json();
@@ -822,6 +836,7 @@ export function updateAPIKeys(keys) {
   if (keys.virustotal !== undefined) API_KEYS.virustotal = keys.virustotal;
   if (keys.threatbook !== undefined) API_KEYS.threatbook = keys.threatbook;
   if (keys.pulsedive !== undefined) API_KEYS.pulsedive = keys.pulsedive;
+  if (keys.urlhaus !== undefined) API_KEYS.urlhaus = keys.urlhaus;
   // 注意：源的启用/禁用由用户的情报源开关(sourceEnabled)控制，不再随 Key 自动启用
   console.log('[威胁情报] API Key 已更新');
 }

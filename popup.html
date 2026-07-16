@@ -48,6 +48,10 @@
       <details class="settings-details" id="whitelist-details" open>
         <summary class="settings-summary">⭐ 我的白名单（免检测）</summary>
         <div class="settings-body">
+          <div class="whitelist-search-wrap">
+            <input type="text" id="whitelist-search" class="settings-input"
+                   placeholder="🔍 搜索白名单域名…" autocomplete="off">
+          </div>
           <div class="whitelist-list" id="whitelist-list">
             <div class="whitelist-empty">暂无白名单，添加常用安全网站可跳过检测</div>
           </div>
@@ -90,6 +94,9 @@
           <label class="settings-label" for="key-pulsedive">Pulsedive API Key</label>
           <input type="password" id="key-pulsedive" class="settings-input"
                  placeholder="可选，综合情报 pulsedive.com" autocomplete="off">
+          <label class="settings-label" for="key-urlhaus">URLhaus Auth-Key</label>
+          <input type="password" id="key-urlhaus" class="settings-input"
+                 placeholder="必填(免费)，申请: auth.abuse.ch" autocomplete="off">
           <p class="settings-hint">如使用代理，请将代理的出口 IP（非本机 IP）加入微步 IP 白名单。</p>
           <button class="action-btn btn-save" id="btn-save-keys">保存设置</button>
           <p class="settings-hint">VirusTotal / 微步 ThreatBook 免费 Key 限速，仅作为确认层参与拦截。</p>

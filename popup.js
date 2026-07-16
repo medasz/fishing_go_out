@@ -46,18 +46,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ---------- 白名单管理 ----------
   const whitelistList = document.getElementById('whitelist-list');
   const whitelistInput = document.getElementById('whitelist-input');
+  const whitelistSearch = document.getElementById('whitelist-search');
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function renderWhitelist(list) {
-    if (!list || list.length === 0) {
+  // 当前完整白名单（数据源），渲染时按搜索词过滤
+  let currentWhitelist = [];
+
+  function renderWhitelist() {
+    const term = (whitelistSearch.value || '').trim().toLowerCase();
+    const filtered = term
+      ? currentWhitelist.filter(d => d.toLowerCase().includes(term))
+      : currentWhitelist;
+
+    if (currentWhitelist.length === 0) {
       whitelistList.innerHTML = '<div class="whitelist-empty">暂无白名单，添加常用安全网站可跳过检测</div>';
       return;
     }
-    whitelistList.innerHTML = list.map(d =>
+    if (filtered.length === 0) {
+      whitelistList.innerHTML = `<div class="whitelist-empty">未找到匹配 “${escapeHtml(term)}” 的白名单</div>`;
+      return;
+    }
+
+    whitelistList.innerHTML = filtered.map(d =>
       `<div class="whitelist-item">
          <span class="whitelist-domain">${escapeHtml(d)}</span>
          <button class="whitelist-remove" data-domain="${escapeHtml(d)}" title="移除">✕</button>
@@ -67,8 +81,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function refreshWhitelist() {
     const res = await chrome.runtime.sendMessage({ action: 'GET_WHITELIST' });
-    if (res && res.whitelist) renderWhitelist(res.whitelist);
+    if (res && res.whitelist) {
+      currentWhitelist = res.whitelist;
+      renderWhitelist();
+    }
   }
+
+  // 搜索框实时过滤
+  whitelistSearch.addEventListener('input', renderWhitelist);
 
   await refreshWhitelist();
 
@@ -79,7 +99,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const res = await chrome.runtime.sendMessage({ action: 'ADD_WHITELIST', domain: raw });
     if (res && res.whitelist) {
       whitelistInput.value = '';
-      renderWhitelist(res.whitelist);
+      currentWhitelist = res.whitelist;
+      renderWhitelist();
     }
   });
   whitelistInput.addEventListener('keydown', (e) => {
@@ -93,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const domain = new URL(currentTab.url).hostname;
         const res = await chrome.runtime.sendMessage({ action: 'ADD_WHITELIST', domain });
-        if (res && res.whitelist) renderWhitelist(res.whitelist);
+        if (res && res.whitelist) { currentWhitelist = res.whitelist; renderWhitelist(); }
       } catch {}
     }
   });
@@ -104,19 +125,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!btn) return;
     const domain = btn.dataset.domain;
     const res = await chrome.runtime.sendMessage({ action: 'REMOVE_WHITELIST', domain });
-    if (res && res.whitelist) renderWhitelist(res.whitelist);
+    if (res && res.whitelist) { currentWhitelist = res.whitelist; renderWhitelist(); }
   });
 
   // 清空
   document.getElementById('btn-clear-whitelist').addEventListener('click', async () => {
     const res = await chrome.runtime.sendMessage({ action: 'CLEAR_WHITELIST' });
-    if (res && res.success) renderWhitelist([]);
+    if (res && res.success) { currentWhitelist = []; renderWhitelist(); }
   });
 
   // 恢复预置
   document.getElementById('btn-reset-whitelist').addEventListener('click', async () => {
     const res = await chrome.runtime.sendMessage({ action: 'RESET_WHITELIST' });
-    if (res && res.whitelist) renderWhitelist(res.whitelist);
+    if (res && res.whitelist) { currentWhitelist = res.whitelist; renderWhitelist(); }
   });
 
   // ---------- 加载并保存 API Key 设置 ----------
@@ -124,7 +145,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     virustotal: document.getElementById('key-virustotal'),
     alienvault: document.getElementById('key-alienvault'),
     threatbook: document.getElementById('key-threatbook'),
-    pulsedive: document.getElementById('key-pulsedive')
+    pulsedive: document.getElementById('key-pulsedive'),
+    urlhaus: document.getElementById('key-urlhaus')
   };
 
   const savedKeys = await chrome.runtime.sendMessage({ action: 'GET_API_KEYS' });
@@ -133,6 +155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (savedKeys.alienvault) KEY_FIELDS.alienvault.value = savedKeys.alienvault;
     if (savedKeys.threatbook) KEY_FIELDS.threatbook.value = savedKeys.threatbook;
     if (savedKeys.pulsedive) KEY_FIELDS.pulsedive.value = savedKeys.pulsedive;
+    if (savedKeys.urlhaus) KEY_FIELDS.urlhaus.value = savedKeys.urlhaus;
   }
 
   document.getElementById('btn-save-keys').addEventListener('click', async () => {
@@ -140,7 +163,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       virustotal: KEY_FIELDS.virustotal.value.trim(),
       alienvault: KEY_FIELDS.alienvault.value.trim(),
       threatbook: KEY_FIELDS.threatbook.value.trim(),
-      pulsedive: KEY_FIELDS.pulsedive.value.trim()
+      pulsedive: KEY_FIELDS.pulsedive.value.trim(),
+      urlhaus: KEY_FIELDS.urlhaus.value.trim()
     };
     await chrome.storage.local.set({ apiKeys: keys });
     await chrome.runtime.sendMessage({ action: 'UPDATE_API_KEYS', keys });
