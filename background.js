@@ -31,7 +31,9 @@ const DEFAULT_WHITELIST = [
 ];
 
 // 初始化：加载持久化统计 + 预加载情报源 + 加载白名单
-(async () => {
+// 用 initPromise 暴露初始化完成状态，消息处理在返回前 await 它，
+// 避免 Service Worker 冷启动时读到尚未 applySourceToggles 的默认内存状态
+const initPromise = (async () => {
   const [saved, keyStore, toggleStore, whitelistStore, initFlag] = await Promise.all([
     chrome.storage.local.get('stats'),
     chrome.storage.local.get('apiKeys'),
@@ -394,8 +396,11 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case 'GET_STATS':
-      sendResponse(stats);
-      break;
+      (async () => {
+        await initPromise;
+        sendResponse(stats);
+      })();
+      return true;
 
     case 'CLEAR_STATS':
       stats = { total: 0, safe: 0, threat: 0, error: 0 };
@@ -543,8 +548,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'GET_SOURCE_STATUS':
-      sendResponse(getSourceStatus());
-      break;
+      (async () => {
+        await initPromise;
+        sendResponse(getSourceStatus());
+      })();
+      return true;
 
     case 'UPDATE_API_KEYS':
       updateAPIKeys(message.keys || {});
@@ -559,9 +567,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // 保持异步通道
 
     case 'UPDATE_SOURCE_TOGGLES':
-      applySourceToggles(message.toggles || {});
-      sendResponse({ success: true });
-      break;
+      (async () => {
+        await initPromise;
+        applySourceToggles(message.toggles || {});
+        await chrome.storage.local.set({ sourceEnabled: message.toggles || {} });
+        sendResponse({ success: true });
+      })();
+      return true;
 
     case 'GET_BLOCKED_INFO':
       (async () => {

@@ -34,10 +34,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     sourceList.addEventListener('change', async (e) => {
       const cb = e.target.closest('input[type="checkbox"][data-key]');
       if (!cb) return;
-      const toggles = {};
-      sourceList.querySelectorAll('input[type="checkbox"][data-key]').forEach(c => {
-        toggles[c.dataset.key] = c.checked;
-      });
+      const key = cb.dataset.key;
+      const checked = cb.checked;
+      // 增量更新：合并已保存的其它源开关，避免覆盖用户已开启的其它情报源
+      // （防止冷启动竞态下 UI 误显未勾选而导致全量覆盖丢失配置）
+      const store = await chrome.storage.local.get('sourceEnabled');
+      const toggles = Object.assign({}, store.sourceEnabled || {}, { [key]: checked });
       await chrome.storage.local.set({ sourceEnabled: toggles });
       await chrome.runtime.sendMessage({ action: 'UPDATE_SOURCE_TOGGLES', toggles });
     });
