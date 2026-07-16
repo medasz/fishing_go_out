@@ -16,9 +16,9 @@
       min-height: 100vh;
     }
     .checking-container {
-      max-width: 600px;
+      max-width: 520px;
       width: 100%;
-      padding: 48px 32px;
+      padding: 48px 24px;
       text-align: center;
     }
     .checking-icon {
@@ -34,6 +34,8 @@
       font-size: 40px;
       animation: pulse 2s infinite;
     }
+    .checking-icon.safe { background: rgba(46, 160, 67, 0.12); border-color: #3fb950; animation: none; }
+    .checking-icon.threat { background: rgba(218, 54, 51, 0.15); border-color: #da3633; animation: none; }
     @keyframes pulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.4); }
       50% { box-shadow: 0 0 0 18px rgba(88, 166, 255, 0); }
@@ -45,9 +47,9 @@
       margin-bottom: 12px;
     }
     .checking-subtitle {
-      font-size: 16px;
+      font-size: 15px;
       color: #8b949e;
-      margin-bottom: 32px;
+      margin-bottom: 28px;
       line-height: 1.6;
     }
     .checking-info {
@@ -55,13 +57,12 @@
       border: 1px solid #30363d;
       border-radius: 12px;
       padding: 20px 24px;
-      margin-bottom: 32px;
       text-align: left;
     }
     .info-row {
       display: flex;
       justify-content: space-between;
-      padding: 8px 0;
+      padding: 10px 0;
       border-bottom: 1px solid #21262d;
       font-size: 14px;
     }
@@ -82,13 +83,14 @@
       text-align: left;
     }
     .checking-actions {
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 24px;
     }
+    .checking-actions.loading { grid-template-columns: 1fr; }
     .btn {
-      padding: 14px 28px;
+      padding: 13px 20px;
       border: none;
       border-radius: 8px;
       font-size: 15px;
@@ -97,95 +99,80 @@
       transition: all 0.2s;
       font-family: inherit;
       text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      line-height: 1.2;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled {
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
     }
     .btn-back {
       background: #21262d;
       color: #c9d1d9;
       border: 1px solid #30363d;
     }
-    .btn-back:hover {
-      background: #30363d;
-      transform: translateY(-1px);
-    }
+    .btn-back:hover { background: #30363d; }
     .btn-proceed {
       background: #da3633;
       color: white;
     }
-    .btn-proceed:hover {
-      background: #f85149;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(218, 54, 51, 0.4);
-    }
+    .btn-proceed:hover { background: #f85149; box-shadow: 0 4px 12px rgba(218, 54, 51, 0.4); }
     .btn-proceed:disabled {
       background: #30363d;
       color: #484f58;
-      cursor: not-allowed;
-      box-shadow: none;
-      transform: none;
     }
     .btn-skip {
-      background: #30363d;
-      color: #c9d1d9;
+      background: transparent;
+      color: #8b949e;
       border: 1px solid #484f58;
     }
-    .btn-skip:hover {
-      background: #484f58;
-      transform: translateY(-1px);
-    }
+    .btn-skip:hover { background: #30363d; color: #c9d1d9; }
     .btn-skip:disabled {
       color: #484f58;
-      cursor: not-allowed;
-      box-shadow: none;
-      transform: none;
+      border-color: #30363d;
+      background: transparent;
     }
     .checking-hint {
-      margin-top: 24px;
+      margin-top: 20px;
       font-size: 12px;
       color: #484f58;
       line-height: 1.5;
     }
     .checking-footer {
-      margin-top: 48px;
+      margin-top: 36px;
       font-size: 12px;
       color: #484f58;
     }
-    .spinner {
-      width: 18px;
-      height: 18px;
-      border: 2px solid #30363d;
-      border-top-color: #58a6ff;
-      border-radius: 50%;
-      display: inline-block;
-      vertical-align: -3px;
-      margin-right: 8px;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none !important; }
+
+    @media (max-width: 480px) {
+      .checking-container { padding: 36px 20px; }
+      .checking-actions { grid-template-columns: 1fr; }
+      .checking-title { font-size: 24px; }
+    }
   </style>
 </head>
 <body>
   <div class="checking-container">
-    <div class="checking-icon">🛡️</div>
+    <div class="checking-icon" id="checking-icon">🛡️</div>
 
-    <!-- 检测中状态 -->
     <div id="state-loading">
       <h1 class="checking-title">安全检测中…</h1>
       <p class="checking-subtitle">
         正在核查目标网站的威胁情报，<br>确认安全前不会加载任何页面内容。
       </p>
-      <div class="checking-actions" style="margin-top:8px;">
-        <button class="btn btn-skip" id="btn-skip">跳过检测，直接访问</button>
-      </div>
     </div>
 
-    <!-- 安全状态 -->
     <div id="state-safe" class="hidden">
       <h1 class="checking-title" style="color:#3fb950;">✓ 未检测到威胁</h1>
       <p class="checking-subtitle">该网站未出现在威胁情报库中，即将为您跳转。</p>
     </div>
 
-    <!-- 威胁状态 -->
     <div id="state-threat" class="hidden">
       <h1 class="checking-title" style="color:#da3633;">⚠️ 发现安全威胁</h1>
       <p class="checking-subtitle">
@@ -201,11 +188,10 @@
       <div class="checking-desc" id="info-desc" style="display:none;"></div>
     </div>
 
-    <div class="checking-actions">
-      <button class="btn btn-back" id="btn-back">返回安全页面</button>
-      <button class="btn btn-proceed" id="btn-proceed" disabled>
-        <span class="spinner" id="proceed-spinner"></span>仍要访问
-      </button>
+    <div class="checking-actions loading" id="action-panel">
+      <button class="btn btn-skip" id="btn-skip">跳过检测，直接访问</button>
+      <button class="btn btn-back hidden" id="btn-back">返回安全页面</button>
+      <button class="btn btn-proceed hidden" id="btn-proceed" disabled>仍要访问</button>
     </div>
 
     <p class="checking-hint">
@@ -215,8 +201,6 @@
 
     <div class="checking-footer">
       钓鱼拦截扩展 · 数据来源: VirusTotal / 微步 ThreatBook / Pulsedive / URLhaus / AlienVault OTX
-
-
     </div>
   </div>
 

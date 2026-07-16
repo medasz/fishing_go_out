@@ -67,11 +67,12 @@
 
   // ---------- 返回安全页面 ----------
   document.getElementById('btn-back').addEventListener('click', () => {
-    // 尝试使用浏览器后退
-    if (window.history.length > 1) {
-      window.history.back();
+    // 历史记录: [上一页] → [checking.html] → [blocked.html]
+    // 必须回退 2 步越过检测中转页，否则退到 checking.html 会再次触发拦截
+    if (window.history.length > 2) {
+      window.history.go(-2);
     }
-    // 如果后退失败，直接关闭标签页
+    // 如果后退失败（新标签页等），直接关闭标签页
     setTimeout(() => {
       chrome.runtime.sendMessage({ action: 'CLOSE_TAB' });
     }, 300);

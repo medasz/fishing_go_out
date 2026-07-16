@@ -484,6 +484,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'PROCEED_FROM_CHECKING':
       // 用户在检测页手动直接跳转 / 检测结果为安全 → 放行目标站
+      // 前端已使用 location.replace 直接跳转，这里仅更新缓存/白名单
       (async () => {
         const targetUrl = message.url;
         const domain = message.domain;
@@ -497,12 +498,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log(`[钓鱼拦截] 用户从检测页放行: ${domain}`);
         const tid = message.tabId || (sender.tab && sender.tab.id);
         if (tid != null) markSafeBadge(tid);
-        try {
-          await chrome.tabs.update(tid, { url: targetUrl });
-          sendResponse({ success: true });
-        } catch (err) {
-          sendResponse({ success: false, error: String(err) });
-        }
+        sendResponse({ success: true });
       })();
       return true; // 保持异步通道
 

@@ -23,7 +23,9 @@
   const btnBack = document.getElementById('btn-back');
   const btnProceed = document.getElementById('btn-proceed');
   const btnSkip = document.getElementById('btn-skip');
-  const proceedSpinner = document.getElementById('proceed-spinner');
+
+  const actionPanel = document.getElementById('action-panel');
+  const checkingIcon = document.getElementById('checking-icon');
 
   let currentTabId = null;
   let checkResolved = false;   // 检测是否已出结果
@@ -38,7 +40,30 @@
     stateSafe.classList.add('hidden');
     stateThreat.classList.add('hidden');
     state.classList.remove('hidden');
+
+    // 统一操作按钮区域：加载时只显示「跳过检测」，结果后显示「返回」+「仍要访问」
+    if (state === stateLoading) {
+      actionPanel.classList.add('loading');
+      btnSkip.classList.remove('hidden');
+      btnBack.classList.add('hidden');
+      btnProceed.classList.add('hidden');
+      checkingIcon.className = 'checking-icon';
+      checkingIcon.textContent = '🛡️';
+    } else {
+      actionPanel.classList.remove('loading');
+      btnSkip.classList.add('hidden');
+      btnBack.classList.remove('hidden');
+      btnProceed.classList.remove('hidden');
+      if (state === stateSafe) {
+        checkingIcon.className = 'checking-icon safe';
+        checkingIcon.textContent = '✓';
+      } else if (state === stateThreat) {
+        checkingIcon.className = 'checking-icon threat';
+        checkingIcon.textContent = '⚠️';
+      }
+    }
   }
+
 
   function fillThreatInfo(threatInfo) {
     threatInfo = threatInfo || {};
@@ -68,18 +93,16 @@
     btnProceed.textContent = '正在跳转...';
     btnProceed.disabled = true;
 
+    // 使用 replace 不留历史，防止后退时回到检测页再次触发拦截
+    if (targetUrl) location.replace(targetUrl);
+
+    // 异步通知 background 更新缓存/白名单
     chrome.runtime.sendMessage({
       action: 'PROCEED_FROM_CHECKING',
       url: targetUrl,
       domain: domain,
       tabId: currentTabId
-    }, (resp) => {
-      if (!resp || !resp.success) {
-        // 兜底：直接跳转
-        btnProceed.textContent = '跳转失败，正在重试...';
-        if (targetUrl) location.href = targetUrl;
-      }
-    });
+    }).catch(() => {});
   });
 
   // ---------- 发起检测 ----------
@@ -106,26 +129,22 @@
         fillThreatInfo(resp.threatInfo);
         // 允许手动跳转
         btnProceed.disabled = false;
-        proceedSpinner.classList.add('hidden');
       } else if (resp && resp.error) {
         // 检测失败：按安全处理，但允许用户自行决定
         showState(stateSafe);
         btnProceed.disabled = false;
-        proceedSpinner.classList.add('hidden');
         // 自动放行（检测失败不拦截）
         doProceed();
       } else {
         // 安全
         showState(stateSafe);
         btnProceed.disabled = false;
-        proceedSpinner.classList.add('hidden');
         doProceed();
       }
     } catch (err) {
       console.error('[检测页] 请求检测失败:', err);
       showState(stateSafe);
       btnProceed.disabled = false;
-      proceedSpinner.classList.add('hidden');
       doProceed();
     }
   }
@@ -136,16 +155,15 @@
     proceedRequested = true;
     btnProceed.textContent = '正在跳转...';
     if (btnSkip) { btnSkip.disabled = true; btnSkip.textContent = '正在跳转...'; }
+    // 使用 replace 不留历史，避免后退时回到检测页再次触发检测
+    if (targetUrl) location.replace(targetUrl);
+    // 异步通知 background 更新缓存/白名单（不阻塞跳转）
     chrome.runtime.sendMessage({
       action: 'PROCEED_FROM_CHECKING',
       url: targetUrl,
       domain: domain,
       tabId: currentTabId
-    }, (resp) => {
-      if (!resp || !resp.success) {
-        if (targetUrl) location.href = targetUrl;
-      }
-    });
+    }).catch(() => {});
   }
 
   // 检测过程中「跳过检测，直接访问」：行为等同放行
