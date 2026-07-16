@@ -298,3 +298,86 @@ body {
   line-height: 1.5;
   margin-top: 2px;
 }
+
+/* ---- 白名单管理 ---- */
+.whitelist {
+  background: white;
+  border-bottom: 1px solid #eee;
+}
+
+.whitelist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.whitelist-empty {
+  font-size: 12px;
+  color: #bbb;
+  padding: 8px 0;
+  text-align: center;
+}
+
+.whitelist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #f5f9ff;
+  border: 1px solid #e3f0ff;
+  border-radius: 6px;
+}
+
+.whitelist-domain {
+  font-size: 13px;
+  color: #1557b0;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.whitelist-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: #ffe0e0;
+  color: #c62828;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.whitelist-remove:hover {
+  background: #ffc0c0;
+}
+
+.whitelist-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.whitelist-add .settings-input {
+  flex: 1;
+}
+
+.whitelist-add .btn-save {
+  margin-top: 0;
+  flex-shrink: 0;
+  padding: 9px 16px;
+}
+
+.btn-add-current {
+  background: #e8f0fe;
+  color: #1a73e8;
+  border: 1px solid #d2e3fc;
+}
+
+.btn-add-current:hover {
+  background: #d2e3fc;
+}

@@ -12,19 +12,24 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 缓存 30 分钟
 const domainCache = new Map();        // 域名 -> { threat, timestamp }
 const pendingQueries = new Map();    // 域名 -> Promise (去重，同一域名只查一次)
 const exceptionDomains = new Set();  // 用户手动放行的域名（会话级别）
+const whitelist = new Set();         // 持久化白名单（常用安全网站，免检测）
 let stats = { total: 0, safe: 0, threat: 0, error: 0 };
 
-// 初始化：加载持久化统计 + 预加载情报源
+// 初始化：加载持久化统计 + 预加载情报源 + 加载白名单
 (async () => {
-  const [saved, keyStore, toggleStore] = await Promise.all([
+  const [saved, keyStore, toggleStore, whitelistStore] = await Promise.all([
     chrome.storage.local.get('stats'),
     chrome.storage.local.get('apiKeys'),
     chrome.storage.local.get('sourceEnabled'),
+    chrome.storage.local.get('whitelist'),
     preloadIntelligenceSources()
   ]);
   if (saved.stats) stats = saved.stats;
   if (keyStore && keyStore.apiKeys) updateAPIKeys(keyStore.apiKeys);
   if (toggleStore && toggleStore.sourceEnabled) applySourceToggles(toggleStore.sourceEnabled);
+  if (whitelistStore && Array.isArray(whitelistStore.whitelist)) {
+    whitelistStore.whitelist.forEach(d => whitelist.add(String(d).toLowerCase()));
+  }
 })();
 
 // ---------- 工具函数 ----------
@@ -34,6 +39,29 @@ function extractDomain(url) {
   } catch {
     return '';
   }
+}
+
+// 规范化域名：去协议/路径/端口/用户名，转小写
+function normalizeDomain(input) {
+  if (!input) return '';
+  let d = String(input).trim().toLowerCase();
+  d = d.replace(/^https?:\/\//, '');
+  d = d.replace(/^[^@]*@/, '');   // 去掉 user@
+  d = d.replace(/:\d+$/, '');     // 去掉端口
+  d = d.replace(/\/.*$/, '');     // 去掉路径
+  d = d.replace(/^\./, '');       // 去掉前导点
+  return d;
+}
+
+// 白名单匹配（精确 + 子域名）：evil.github.com 命中 github.com
+function isWhitelisted(domain) {
+  if (!domain) return false;
+  const d = domain.toLowerCase();
+  if (whitelist.has(d)) return true;
+  for (const entry of whitelist) {
+    if (d.endsWith('.' + entry)) return true;
+  }
+  return false;
 }
 
 async function saveStats() {
@@ -97,6 +125,12 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
   const domain = extractDomain(details.url);
   if (!domain) return;
+
+  // 命中白名单（精确或子域名）→ 免检测直接放行
+  if (isWhitelisted(domain)) {
+    console.log(`[钓鱼拦截] 白名单域名: ${domain}，跳过检测`);
+    return;
+  }
 
   // 用户已手动放行此域名 → 直接放行，不查询
   if (exceptionDomains.has(domain)) {
@@ -343,6 +377,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       saveStats();
       sendResponse({ success: true });
       break;
+
+    case 'GET_WHITELIST':
+      sendResponse({ whitelist: [...whitelist] });
+      break;
+
+    case 'ADD_WHITELIST':
+      (async () => {
+        const d = normalizeDomain(message.domain);
+        if (!d) { sendResponse({ error: 'Invalid domain' }); return; }
+        whitelist.add(d);
+        await chrome.storage.local.set({ whitelist: [...whitelist] });
+        console.log(`[钓鱼拦截] 加入白名单: ${d}`);
+        sendResponse({ success: true, whitelist: [...whitelist] });
+      })();
+      return true;
+
+    case 'REMOVE_WHITELIST':
+      (async () => {
+        const d = normalizeDomain(message.domain);
+        whitelist.delete(d);
+        await chrome.storage.local.set({ whitelist: [...whitelist] });
+        console.log(`[钓鱼拦截] 移出白名单: ${d}`);
+        sendResponse({ success: true, whitelist: [...whitelist] });
+      })();
+      return true;
+
+    case 'CLEAR_WHITELIST':
+      (async () => {
+        whitelist.clear();
+        await chrome.storage.local.set({ whitelist: [] });
+        sendResponse({ success: true });
+      })();
+      return true;
 
     case 'CHECK_DOMAIN':
       (async () => {

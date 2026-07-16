@@ -43,6 +43,25 @@
       </div>
     </section>
 
+    <!-- 白名单管理 -->
+    <section class="whitelist">
+      <details class="settings-details" id="whitelist-details" open>
+        <summary class="settings-summary">⭐ 我的白名单（免检测）</summary>
+        <div class="settings-body">
+          <div class="whitelist-list" id="whitelist-list">
+            <div class="whitelist-empty">暂无白名单，添加常用安全网站可跳过检测</div>
+          </div>
+          <div class="whitelist-add">
+            <input type="text" id="whitelist-input" class="settings-input"
+                   placeholder="输入域名，如 github.com" autocomplete="off">
+            <button class="action-btn btn-save" id="btn-add-whitelist">添加</button>
+          </div>
+          <button class="action-btn btn-add-current" id="btn-add-current">+ 添加当前页面域名</button>
+          <button class="action-btn btn-clear" id="btn-clear-whitelist">清空白名单</button>
+        </div>
+      </details>
+    </section>
+
     <!-- 情报源状态 -->
     <section class="source-status">
       <div class="section-title">情报源</div>

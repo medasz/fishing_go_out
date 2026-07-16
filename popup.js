@@ -43,6 +43,76 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // ---------- 白名单管理 ----------
+  const whitelistList = document.getElementById('whitelist-list');
+  const whitelistInput = document.getElementById('whitelist-input');
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function renderWhitelist(list) {
+    if (!list || list.length === 0) {
+      whitelistList.innerHTML = '<div class="whitelist-empty">暂无白名单，添加常用安全网站可跳过检测</div>';
+      return;
+    }
+    whitelistList.innerHTML = list.map(d =>
+      `<div class="whitelist-item">
+         <span class="whitelist-domain">${escapeHtml(d)}</span>
+         <button class="whitelist-remove" data-domain="${escapeHtml(d)}" title="移除">✕</button>
+       </div>`
+    ).join('');
+  }
+
+  async function refreshWhitelist() {
+    const res = await chrome.runtime.sendMessage({ action: 'GET_WHITELIST' });
+    if (res && res.whitelist) renderWhitelist(res.whitelist);
+  }
+
+  await refreshWhitelist();
+
+  // 添加（输入框）
+  document.getElementById('btn-add-whitelist').addEventListener('click', async () => {
+    const raw = whitelistInput.value.trim();
+    if (!raw) return;
+    const res = await chrome.runtime.sendMessage({ action: 'ADD_WHITELIST', domain: raw });
+    if (res && res.whitelist) {
+      whitelistInput.value = '';
+      renderWhitelist(res.whitelist);
+    }
+  });
+  whitelistInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-add-whitelist').click();
+  });
+
+  // 添加当前页面域名
+  document.getElementById('btn-add-current').addEventListener('click', async () => {
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (currentTab && currentTab.url) {
+      try {
+        const domain = new URL(currentTab.url).hostname;
+        const res = await chrome.runtime.sendMessage({ action: 'ADD_WHITELIST', domain });
+        if (res && res.whitelist) renderWhitelist(res.whitelist);
+      } catch {}
+    }
+  });
+
+  // 移除（事件委托）
+  whitelistList.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.whitelist-remove');
+    if (!btn) return;
+    const domain = btn.dataset.domain;
+    const res = await chrome.runtime.sendMessage({ action: 'REMOVE_WHITELIST', domain });
+    if (res && res.whitelist) renderWhitelist(res.whitelist);
+  });
+
+  // 清空
+  document.getElementById('btn-clear-whitelist').addEventListener('click', async () => {
+    const res = await chrome.runtime.sendMessage({ action: 'CLEAR_WHITELIST' });
+    if (res && res.success) renderWhitelist([]);
+  });
+
   // ---------- 加载并保存 API Key 设置 ----------
   const KEY_FIELDS = {
     virustotal: document.getElementById('key-virustotal'),
