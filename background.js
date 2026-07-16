@@ -450,6 +450,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })();
       return true;
 
+    case 'EXPORT_CONFIG':
+      (async () => {
+        const store = await chrome.storage.local.get([
+          'whitelist', 'whitelistInitialized', 'apiKeys', 'sourceEnabled', 'stats'
+        ]);
+        const exportData = {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          whitelist: Array.isArray(store.whitelist) ? store.whitelist : [],
+          whitelistInitialized: !!store.whitelistInitialized,
+          apiKeys: store.apiKeys || {},
+          sourceEnabled: store.sourceEnabled || {},
+          stats: store.stats || null
+        };
+        sendResponse({ success: true, config: exportData });
+      })();
+      return true;
+
+    case 'IMPORT_CONFIG':
+      (async () => {
+        const cfg = message.config;
+        if (!cfg || typeof cfg !== 'object') {
+          sendResponse({ success: false, error: 'Invalid config' });
+          return;
+        }
+        // 白名单
+        if (Array.isArray(cfg.whitelist)) {
+          whitelist.clear();
+          cfg.whitelist.map(String).forEach(d => { if (d) whitelist.add(d.toLowerCase()); });
+          await chrome.storage.local.set({ whitelist: [...whitelist], whitelistInitialized: true });
+        }
+        // API Key
+        if (cfg.apiKeys && typeof cfg.apiKeys === 'object') {
+          updateAPIKeys(cfg.apiKeys);
+          await chrome.storage.local.set({ apiKeys: cfg.apiKeys });
+        }
+        // 情报源开关
+        if (cfg.sourceEnabled && typeof cfg.sourceEnabled === 'object') {
+          applySourceToggles(cfg.sourceEnabled);
+          await chrome.storage.local.set({ sourceEnabled: cfg.sourceEnabled });
+        }
+        // 统计（可选）
+        if (cfg.stats && typeof cfg.stats === 'object') {
+          stats = cfg.stats;
+          saveStats();
+        }
+        sendResponse({ success: true });
+      })();
+      return true;
+
+
     case 'CHECK_DOMAIN':
       (async () => {
         const domain = message.domain;

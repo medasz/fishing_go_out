@@ -140,6 +140,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (res && res.whitelist) { currentWhitelist = res.whitelist; renderWhitelist(); }
   });
 
+  // ---------- 配置导入 / 导出 ----------
+  const configFileInput = document.getElementById('config-file');
+
+  // 导出：序列化为 JSON 文件下载
+  document.getElementById('btn-export-config').addEventListener('click', async () => {
+    const res = await chrome.runtime.sendMessage({ action: 'EXPORT_CONFIG' });
+    if (!res || !res.success || !res.config) return;
+    const blob = new Blob([JSON.stringify(res.config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `fishing-go-out-config-${date}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // 导入：弹出文件选择 → 读取 → 下发 background 应用
+  document.getElementById('btn-import-config').addEventListener('click', () => {
+    configFileInput.click();
+  });
+  configFileInput.addEventListener('change', async () => {
+    const file = configFileInput.files && configFileInput.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const config = JSON.parse(text);
+      const res = await chrome.runtime.sendMessage({ action: 'IMPORT_CONFIG', config });
+      if (res && res.success) {
+        location.reload(); // 重新加载弹窗以反映新配置
+      } else {
+        alert('导入失败：' + (res && res.error ? res.error : '未知错误'));
+      }
+    } catch (err) {
+      alert('导入失败：配置文件不是合法的 JSON\n' + err.message);
+    } finally {
+      configFileInput.value = ''; // 允许重复导入同一文件
+    }
+  });
+
+
   // ---------- 加载并保存 API Key 设置 ----------
   const KEY_FIELDS = {
     virustotal: document.getElementById('key-virustotal'),

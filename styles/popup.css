@@ -406,3 +406,30 @@ body {
 .btn-reset:hover {
   background: #d6ecd6;
 }
+
+/* ---- 配置导入/导出 ---- */
+.config-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-export {
+  background: #eef7ee;
+  color: #2E7D32;
+  border: 1px solid #d6ecd6;
+}
+
+.btn-export:hover {
+  background: #d6ecd6;
+}
+
+.btn-import {
+  background: #e8f0fe;
+  color: #1a73e8;
+  border: 1px solid #d2e3fc;
+}
+
+.btn-import:hover {
+  background: #d2e3fc;
+}

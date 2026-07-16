@@ -99,6 +99,12 @@
                  placeholder="必填(免费)，申请: auth.abuse.ch" autocomplete="off">
           <p class="settings-hint">如使用代理，请将代理的出口 IP（非本机 IP）加入微步 IP 白名单。</p>
           <button class="action-btn btn-save" id="btn-save-keys">保存设置</button>
+          <div class="config-tools">
+            <button class="action-btn btn-export" id="btn-export-config">⤓ 导出配置</button>
+            <button class="action-btn btn-import" id="btn-import-config">⤒ 导入配置</button>
+            <input type="file" id="config-file" accept="application/json,.json" hidden>
+          </div>
+          <p class="settings-hint">导出含白名单/API Key/情报源开关的 JSON，可备份或迁移；导入将覆盖当前同名配置。</p>
           <p class="settings-hint">VirusTotal / 微步 ThreatBook 免费 Key 限速，仅作为确认层参与拦截。</p>
         </div>
       </details>
