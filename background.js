@@ -3,7 +3,7 @@
 //  功能：监听网页导航、查询威胁情报、触发告警
 // ============================================================
 
-import { checkDomainThreat, getCacheKey, inspectHost, extractHost, preloadIntelligenceSources, updateAPIKeys, getSourceStatus, applySourceToggles } from './utils/threat-intel.js';
+import { checkDomainThreat, getCacheKey, inspectHost, extractHost, preloadIntelligenceSources, updateAPIKeys, getSourceStatus, applySourceToggles, isIPv4 } from './utils/threat-intel.js';
 
 // ---------- 配置 ----------
 const CACHE_TTL_MS = 30 * 60 * 1000; // 缓存 30 分钟
@@ -62,6 +62,54 @@ const initPromise = (async () => {
 })();
 
 // ---------- 工具函数 ----------
+
+// 解析白名单条目中的 IP / IP 段（CIDR 或通配符 *）
+// 域名类条目返回 null；IP 类返回 { type:'cidr'|'wildcard', ... }
+function parseIpEntry(entry) {
+  if (typeof entry !== 'string') return null;
+  const e = entry.trim().toLowerCase().replace(/\s+/g, '');
+  if (!e) return null;
+
+  // 通配形式：192.168.* / 192.168.1.* / 10.*.*.*
+  if (e.includes('*')) {
+    const parts = e.split('.');
+    if (parts.length !== 4) return null;
+    if (!parts.every(p => p === '*' || /^\d{1,3}$/.test(p))) return null;
+    if (parts.some(p => /^\d{1,3}$/.test(p) && Number(p) > 255)) return null;
+    return { type: 'wildcard', parts };
+  }
+
+  // CIDR 形式：192.168.1.0/24
+  if (e.includes('/')) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec(e);
+    if (!m) return null;
+    const [, a, b, c, d, bits] = m;
+    if ([a, b, c, d].some(x => Number(x) > 255)) return null;
+    const n = Number(bits);
+    if (n < 0 || n > 32) return null;
+    return { type: 'cidr', ip: `${a}.${b}.${c}.${d}`, maskBits: n };
+  }
+
+  return null; // 域名类，走原逻辑
+}
+
+function ipToLong(ip) {
+  const p = ip.split('.').map(Number);
+  return (p[0] * 16777216 + p[1] * 65536 + p[2] * 256 + p[3]) >>> 0;
+}
+
+function ipInCidr(ip, baseIp, maskBits) {
+  if (maskBits === 0) return true; // 0.0.0.0/0 匹配所有 IPv4
+  const mask = (~0 << (32 - maskBits)) >>> 0;
+  return (ipToLong(ip) & mask) === (ipToLong(baseIp) & mask);
+}
+
+function ipMatchesWildcard(ip, wParts) {
+  const iParts = ip.split('.');
+  if (iParts.length !== 4) return false;
+  return wParts.every((w, i) => w === '*' || Number(w) === Number(iParts[i]));
+}
+
 function extractDomain(url) {
   try {
     return new URL(url).hostname;
@@ -71,9 +119,11 @@ function extractDomain(url) {
 }
 
 // 规范化域名：去协议/路径/端口/用户名，转小写
+// IP / IP 段（CIDR 或通配）作为白名单条目直接保留，不再走域名清洗（否则 /24 等会被当作路径截断）
 function normalizeDomain(input) {
   if (!input) return '';
-  let d = String(input).trim().toLowerCase();
+  let d = String(input).trim().toLowerCase().replace(/\s+/g, '');
+  if (parseIpEntry(d)) return d;  // IP / 192.168.1.0/24 / 192.168.1.* 原样保留
   d = d.replace(/^https?:\/\//, '');
   d = d.replace(/^[^@]*@/, '');   // 去掉 user@
   d = d.replace(/:\d+$/, '');     // 去掉端口
@@ -82,13 +132,25 @@ function normalizeDomain(input) {
   return d;
 }
 
-// 白名单匹配（精确 + 子域名）：evil.github.com 命中 github.com
+// 白名单匹配（精确 + 子域名 + IP + IP 段）
 function isWhitelisted(domain) {
   if (!domain) return false;
   const d = domain.toLowerCase();
   if (whitelist.has(d)) return true;
   for (const entry of whitelist) {
     if (d.endsWith('.' + entry)) return true;
+  }
+  // IP / IP 段匹配：被检测域名本身是 IPv4 时，检查是否命中白名单中的 IP 段
+  if (isIPv4(d)) {
+    for (const entry of whitelist) {
+      const parsed = parseIpEntry(entry);
+      if (!parsed) continue;
+      if (parsed.type === 'cidr') {
+        if (ipInCidr(d, parsed.ip, parsed.maskBits)) return true;
+      } else if (parsed.type === 'wildcard') {
+        if (ipMatchesWildcard(d, parsed.parts)) return true;
+      }
+    }
   }
   return false;
 }
