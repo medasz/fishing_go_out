@@ -87,22 +87,25 @@
   });
 
   // ---------- 仍要访问（手动直接跳转） ----------
-  btnProceed.addEventListener('click', () => {
+  btnProceed.addEventListener('click', async () => {
     if (proceedRequested) return;
     proceedRequested = true;
     btnProceed.textContent = '正在跳转...';
     btnProceed.disabled = true;
 
+    // 必须先通知 background 将域名加入例外，再跳转；
+    // 否则 onBeforeNavigate 会在放行生效前触发，导致再次进入检测页（反复被拦截）
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'PROCEED_FROM_CHECKING',
+        url: targetUrl,
+        domain: domain,
+        tabId: currentTabId
+      });
+    } catch (e) { /* 即使消息失败也允许跳转，避免卡死 */ }
+
     // 使用 replace 不留历史，防止后退时回到检测页再次触发拦截
     if (targetUrl) location.replace(targetUrl);
-
-    // 异步通知 background 更新缓存/白名单
-    chrome.runtime.sendMessage({
-      action: 'PROCEED_FROM_CHECKING',
-      url: targetUrl,
-      domain: domain,
-      tabId: currentTabId
-    }).catch(() => {});
   });
 
   // ---------- 发起检测 ----------
@@ -150,20 +153,22 @@
   }
 
   // 安全时自动跳转（无需用户点击）
-  function doProceed() {
+  async function doProceed() {
     if (proceedRequested) return;
     proceedRequested = true;
     btnProceed.textContent = '正在跳转...';
     if (btnSkip) { btnSkip.disabled = true; btnSkip.textContent = '正在跳转...'; }
+    // 必须先通知 background 将域名加入例外，再跳转，避免再次被拦截
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'PROCEED_FROM_CHECKING',
+        url: targetUrl,
+        domain: domain,
+        tabId: currentTabId
+      });
+    } catch (e) { /* 即使消息失败也允许跳转 */ }
     // 使用 replace 不留历史，避免后退时回到检测页再次触发检测
     if (targetUrl) location.replace(targetUrl);
-    // 异步通知 background 更新缓存/白名单（不阻塞跳转）
-    chrome.runtime.sendMessage({
-      action: 'PROCEED_FROM_CHECKING',
-      url: targetUrl,
-      domain: domain,
-      tabId: currentTabId
-    }).catch(() => {});
   }
 
   // 检测过程中「跳过检测，直接访问」：行为等同放行
