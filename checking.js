@@ -127,11 +127,16 @@
       checkResolved = true;
 
       if (resp && resp.threatInfo) {
-        // 威胁
-        showState(stateThreat);
-        fillThreatInfo(resp.threatInfo);
-        // 允许手动跳转
-        btnProceed.disabled = false;
+        // 威胁：后台已调用 redirectToBlockedPage 将整页跳转到 blocked.html（统一拦截界面）
+        // 这里不再显示 checking 的威胁态，避免与 blocked 页重复观感 / 闪烁
+        // 兜底：若 1.5s 后页面仍未被跳转（如后台重定向失败），再显示本地威胁态
+        setTimeout(() => {
+          if (document.visibilityState !== 'hidden') {
+            showState(stateThreat);
+            fillThreatInfo(resp.threatInfo);
+            btnProceed.disabled = false;
+          }
+        }, 1500);
       } else if (resp && resp.error) {
         // 检测失败：按安全处理，但允许用户自行决定
         showState(stateSafe);
